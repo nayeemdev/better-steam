@@ -177,7 +177,12 @@ function renderStatic() {
   }).join("");
   document.querySelectorAll(".region-select").forEach(s => (s.innerHTML = regions));
   const currencies = state.meta.currencies.map(c => `<option value="${c.code}">${c.code} ${esc(c.symbol)}</option>`).join("");
-  document.querySelectorAll(".currency-select").forEach(s => (s.innerHTML = currencies));
+  const noRates = !state.meta.currencies.length;
+  document.querySelectorAll(".currency-select").forEach(s => {
+    s.innerHTML = currencies;
+    (s.closest("label") ?? s).hidden = noRates;
+    if (s.labels[0]) s.labels[0].hidden = noRates;
+  });
   $("sort").innerHTML = SORTS.map(s => `<button data-sort="${s.id}">${s.label}</button>`).join("");
 }
 
@@ -266,7 +271,9 @@ function render() {
   if (!state.watchOnly && state.hidden.size) summary += ` · ${state.hidden.size} hidden <button class="linkish" id="unhide">Restore</button>`;
   $("summary").innerHTML = summary;
 
-  if (!list.length) {
+  if (!state.games.length) {
+    $("grid").innerHTML = `<div class="status"><b>Prices are on their way</b>The first games appear within ten minutes of launch and the full catalogue fills in over the day.</div>`;
+  } else if (!list.length) {
     const last = active[active.length - 1];
     $("grid").innerHTML = state.watchOnly
       ? `<div class="empty"><b>Your watchlist is empty</b>Open a game and choose Watch price.</div>`
