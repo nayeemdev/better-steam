@@ -33,6 +33,7 @@
     <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01z"/></symbol>
     <symbol id="i-deck" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="3"/><circle cx="6.5" cy="12" r="1.5"/><circle cx="17.5" cy="12" r="1.5"/><path d="M10 10h4v4h-4z"/></symbol>
     <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
   </svg>
@@ -49,6 +50,7 @@
       <span class="spacer"></span>
       <label class="pick">Store region<select class="region-select"></select></label>
       <label class="pick">Also show<select class="currency-select"></select></label>
+      <button class="icon-btn" id="profileBtn" aria-label="Connect your Steam profile"><svg class="i"><use href="#i-user"/></svg><span id="profileName" class="profile-name"></span></button>
       <button class="icon-btn" id="themeBtn" aria-label="Switch to dark theme"><svg class="i"><use href="#i-moon"/></svg></button>
       <button class="icon-btn" id="watchBtn" aria-pressed="false" aria-label="Show watchlist"><svg class="i"><use href="#i-heart"/></svg><span class="pill num" id="watchCount">0</span></button>
     </div>
@@ -65,6 +67,8 @@
         <div class="toolbar">
           <div class="summary" id="summary" aria-live="polite"></div>
           <button class="switch" id="deckOnly" aria-pressed="false"><span class="knob"></span>Steam Deck Verified</button>
+          <button class="switch" id="wishOnly" aria-pressed="false" hidden><span class="knob"></span>My wishlist</button>
+          <button class="switch" id="hideOwned" aria-pressed="true" hidden><span class="knob"></span>Hide owned</button>
         </div>
         <div class="toolbar"><div class="sort" id="sort" role="group" aria-label="Sort by"></div></div>
         <div class="grid" id="grid"><div class="status"><b>Loading games</b>Fetching today's prices.</div></div>
@@ -86,6 +90,21 @@
       </div>
     </div>
   </footer>
+
+  <dialog id="profileDialog" aria-labelledby="profileTitle">
+    <form method="dialog" class="dialog-body" id="profileForm">
+      <h2 id="profileTitle">Your Steam profile</h2>
+      <p>Paste your profile link to filter by your wishlist and hide games you own. No sign in: we only read what your profile shows publicly, and it stays in this browser.</p>
+      <label class="field" for="profileInput">Profile link or ID</label>
+      <input id="profileInput" type="text" placeholder="steamcommunity.com/id/yourname" autocomplete="off">
+      <p class="dialog-status" id="profileStatus" role="status"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn" id="profileDisconnect" hidden>Disconnect</button>
+        <button type="button" class="btn" id="profileClose">Close</button>
+        <button type="submit" class="btn primary" id="profileSubmit">Connect</button>
+      </div>
+    </form>
+  </dialog>
 
   <div class="scrim" id="scrim" hidden></div>
   <div class="toast" id="toast" role="status" hidden></div>

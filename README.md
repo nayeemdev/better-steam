@@ -22,6 +22,7 @@ Purchases always happen on Steam. This site only links to the store page.
 | Descriptions, co-op, regional prices | Steam store `appdetails` |
 | Steam Deck compatibility | Steam store Deck report |
 | Exchange rates | [ExchangeRate-API open access](https://www.exchangerate-api.com/docs/free) |
+| Wishlist and owned games | Steam community profile and Steam Web API |
 
 ### API
 
@@ -30,6 +31,7 @@ Purchases always happen on Steam. This site only links to the store page.
 | `GET /api/meta` | Store regions, currencies with rates, and a default second currency from the visitor's country |
 | `GET /api/games?region=US` | Every listed game with its price and verdict in that region |
 | `GET /api/games/:id/history?region=US` | Tracked price changes for one game |
+| `GET /api/profile?id=<link or ID>` | A Steam profile's public wishlist, and owned games when a Steam Web API key is set |
 
 ## Local development
 
@@ -82,6 +84,16 @@ npm run typecheck
 
 Each push to `main` then applies new migrations and deploys.
 
+### Optional: owned games
+
+Wishlists work without any key. To also hide games people own, get a key at <https://steamcommunity.com/dev/apikey> and add it as a secret:
+
+```bash
+npx wrangler secret put STEAM_API_KEY
+```
+
+For local development, put `STEAM_API_KEY=...` in a `.dev.vars` file instead.
+
 The cron starts filling data within ten minutes. On the free plan the full catalogue (about 850 games) has details after roughly 18 hours. Prices for every region are there within the first two hours.
 
 ## Roadmap
@@ -94,7 +106,7 @@ The cron starts filling data within ten minutes. On the free plan the full catal
 | 4 | Storefront: moods, featured deal, preview, regions, second currency, theme toggle, watchlist, shareable filters | Done |
 | 5 | CI, automatic deploys to Cloudflare, and letting price history build up | Done (needs your Cloudflare secrets) |
 | 6 | Backfill historical lows from IsThereAnyDeal so verdicts are accurate from day one | On hold: their API terms forbid apps that compete with IsThereAnyDeal, so this needs their written permission first |
-| 7 | Hide owned games and import a wishlist from a Steam profile (needs a Steam Web API key) | Planned |
+| 7 | Connect a Steam profile to filter by wishlist and hide owned games | Done (owned games need a Steam Web API key) |
 | 8 | Price alerts for watched games by email (needs an email provider) | Planned |
 
 Not affiliated with Valve.

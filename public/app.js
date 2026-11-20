@@ -42,6 +42,9 @@ const state = {
   moods: new Set((params.get("mood") ?? "").split(",").filter(id => MOODS.some(m => m.id === id))),
   sort: SORTS.some(s => s.id === params.get("sort")) ? params.get("sort") : DEFAULT_SORT,
   deckOnly: params.get("deck") === "1",
+  wishOnly: params.get("wish") === "1",
+  hideOwned: store.get("bs-hide-owned", true),
+  profile: null,
   watchOnly: false,
   shown: PAGE_SIZE,
   selected: Number(params.get("game")) || null,
@@ -101,10 +104,15 @@ function passes(g, moods) {
   if (state.watchOnly) return state.watching.has(g.id);
   if (state.hidden.has(g.id)) return false;
   if (state.deckOnly && g.deck !== DECK_VERIFIED) return false;
+  if (state.wishOnly && state.profile && !state.profile.wishlist.has(g.id)) return false;
+  if (state.hideOwned && isOwned(g)) return false;
   const q = state.query.trim().toLowerCase();
   if (q && !(g.name.toLowerCase().includes(q) || (g.developer ?? "").toLowerCase().includes(q))) return false;
   return moods.every(m => m.test(g));
 }
+
+const isOwned = g => Boolean(state.profile?.owned?.has(g.id));
+const isWished = g => Boolean(state.profile?.wishlist.has(g.id));
 
 function writeUrl() {
   const next = new URLSearchParams();
@@ -112,6 +120,7 @@ function writeUrl() {
   if (state.moods.size) next.set("mood", [...state.moods].join(","));
   if (state.sort !== DEFAULT_SORT) next.set("sort", state.sort);
   if (state.deckOnly) next.set("deck", "1");
+  if (state.wishOnly) next.set("wish", "1");
   if (state.selected) next.set("game", state.selected);
   const query = next.toString();
   history.replaceState(null, "", query ? `?${query}` : location.pathname);
@@ -206,6 +215,7 @@ function cardHtml(g) {
         <img src="${imageUrl(g.id, "library_600x900")}" alt="" loading="lazy" crossorigin="anonymous" data-tint-for="${g.id}" width="600" height="900">
         <span class="badge v-${g.verdict}">${g.verdict === "buy" ? icon("tag") : ""}${esc(v.word)}</span>
         ${g.discount ? `<span class="off-flag num">-${g.discount}%</span>` : ""}
+        ${isOwned(g) ? '<span class="owned">Owned</span>' : ""}
       </div>
       <div class="title">${esc(g.name)}</div>
       <div class="tags">${esc(g.tags.slice(0, 3).join(" · "))}</div>
@@ -215,6 +225,7 @@ function cardHtml(g) {
         ${g.positivePct !== null ? `<span>${icon("star")}${g.positivePct}%</span>` : ""}
         ${g.medianHours ? `<span>${icon("clock")}${g.medianHours} h</span>` : ""}
         ${g.deck === DECK_VERIFIED ? `<span>${icon("deck")}Deck</span>` : ""}
+        ${isWished(g) ? `<span>${icon("heart")}Wishlist</span>` : ""}
       </div>
     </button>
   </article>`;
@@ -228,6 +239,10 @@ function render() {
   $("watchBtn").setAttribute("aria-pressed", state.watchOnly);
   $("watchCount").textContent = state.watching.size;
   $("deckOnly").setAttribute("aria-pressed", state.deckOnly);
+  $("wishOnly").hidden = !state.profile;
+  $("wishOnly").setAttribute("aria-pressed", state.wishOnly);
+  $("hideOwned").hidden = !state.profile?.owned;
+  $("hideOwned").setAttribute("aria-pressed", state.hideOwned);
   document.querySelectorAll("[data-sort]").forEach(b => b.setAttribute("aria-pressed", state.sort === b.dataset.sort));
   document.querySelectorAll(".region-select").forEach(s => (s.value = state.region));
   document.querySelectorAll(".currency-select").forEach(s => (s.value = state.currency));
@@ -238,7 +253,7 @@ function render() {
   let summary = state.watchOnly
     ? `<b class="num">${list.length}</b>on your watchlist`
     : `<b class="num">${list.length}</b>${list.length === 1 ? "game" : "games"}${filters.length ? " for " + esc(filters.join(" + ")) : ""}`;
-  if (!state.watchOnly && (active.length || state.query || state.deckOnly)) summary += ` · <button class="linkish" id="clearFilters">Clear filters</button>`;
+  if (!state.watchOnly && (active.length || state.query || state.deckOnly || state.wishOnly)) summary += ` · <button class="linkish" id="clearFilters">Clear filters</button>`;
   if (!state.watchOnly && state.hidden.size) summary += ` · ${state.hidden.size} hidden <button class="linkish" id="unhide">Restore</button>`;
   $("summary").innerHTML = summary;
 
@@ -316,7 +331,7 @@ function renderPreview() {
     <div class="p-body">
       <div>
         <h2>${esc(g.name)}</h2>
-        <div class="byline">${esc([g.developer, g.released].filter(Boolean).join(" · "))}</div>
+        <div class="byline">${esc([g.developer, g.released, isOwned(g) && "In your library", isWished(g) && "On your wishlist"].filter(Boolean).join(" · "))}</div>
       </div>
       <div class="verdict v-${g.verdict}">
         <div class="word">${icon(v.icon)}${esc(v.word)}</div>
@@ -391,6 +406,60 @@ function setTheme(theme) {
 const saveHidden = () => store.set("bs-hidden", [...state.hidden]);
 const resetPaging = () => (state.shown = PAGE_SIZE);
 
+function setProfile(profile) {
+  state.profile = profile;
+  if (!profile) state.wishOnly = false;
+  $("profileName").textContent = profile?.name ?? "";
+  $("profileBtn").setAttribute("aria-label", profile ? `Steam profile: ${profile.name ?? profile.steamId}` : "Connect your Steam profile");
+}
+
+async function fetchProfile(input) {
+  const res = await fetch(`/api/profile?id=${encodeURIComponent(input)}`);
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error ?? "Could not load that profile. Try again in a moment.");
+  return { steamId: body.steamId, name: body.name, wishlist: new Set(body.wishlist), owned: body.owned ? new Set(body.owned) : null };
+}
+
+function profileSummary(p) {
+  const parts = [`Connected as ${p.name ?? p.steamId}.`, `${p.wishlist.size} ${p.wishlist.size === 1 ? "game" : "games"} on your wishlist.`];
+  parts.push(p.owned ? `${p.owned.size} games in your library.` : "Owned games are not available right now.");
+  if (!p.wishlist.size) parts.push("If your wishlist is not empty, set it to public in your Steam privacy settings.");
+  return parts.join(" ");
+}
+
+function openProfileDialog() {
+  const p = state.profile;
+  $("profileInput").value = p ? `https://steamcommunity.com/profiles/${p.steamId}` : "";
+  $("profileStatus").textContent = p ? profileSummary(p) : "";
+  $("profileStatus").classList.remove("error");
+  $("profileDisconnect").hidden = !p;
+  $("profileSubmit").textContent = p ? "Refresh" : "Connect";
+  $("profileDialog").showModal();
+}
+
+$("profileForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const status = $("profileStatus");
+  status.classList.remove("error");
+  status.textContent = "Looking up your profile.";
+  $("profileSubmit").disabled = true;
+  try {
+    const profile = await fetchProfile($("profileInput").value);
+    setProfile(profile);
+    store.set("bs-steam-id", profile.steamId);
+    status.textContent = profileSummary(profile);
+    $("profileDisconnect").hidden = false;
+    $("profileSubmit").textContent = "Refresh";
+    resetPaging();
+    render();
+  } catch (err) {
+    status.classList.add("error");
+    status.textContent = err.message;
+  } finally {
+    $("profileSubmit").disabled = false;
+  }
+});
+
 async function loadGames() {
   $("grid").innerHTML = `<div class="status"><b>Loading games</b>Fetching today's prices.</div>`;
   const res = await fetch(`/api/games?region=${state.region}`);
@@ -410,7 +479,7 @@ async function changeRegion(region) {
 }
 
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#themeBtn,#moreBtn");
+  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect");
   if (!t) return;
   const d = t.dataset;
   if (d.mood) { state.moods.has(d.mood) ? state.moods.delete(d.mood) : state.moods.add(d.mood); state.watchOnly = false; resetPaging(); render(); }
@@ -426,10 +495,15 @@ document.addEventListener("click", e => {
     toast(`Hidden ${byId(id).name}`, () => { state.hidden.delete(id); saveHidden(); render(); });
   }
   else if (t.id === "unhide") { state.hidden.clear(); saveHidden(); render(); }
-  else if (t.id === "clearFilters") { state.moods.clear(); state.query = ""; $("q").value = ""; state.deckOnly = false; resetPaging(); render(); }
+  else if (t.id === "clearFilters") { state.moods.clear(); state.query = ""; $("q").value = ""; state.deckOnly = false; state.wishOnly = false; resetPaging(); render(); }
   else if (t.id === "closeBtn" || t.id === "scrim") closePreview();
   else if (t.id === "watchBtn") { state.watchOnly = !state.watchOnly; resetPaging(); render(); }
   else if (t.id === "deckOnly") { state.deckOnly = !state.deckOnly; resetPaging(); render(); }
+  else if (t.id === "wishOnly") { state.wishOnly = !state.wishOnly; resetPaging(); render(); }
+  else if (t.id === "hideOwned") { state.hideOwned = !state.hideOwned; store.set("bs-hide-owned", state.hideOwned); resetPaging(); render(); }
+  else if (t.id === "profileBtn") openProfileDialog();
+  else if (t.id === "profileClose") $("profileDialog").close();
+  else if (t.id === "profileDisconnect") { setProfile(null); store.set("bs-steam-id", null); openProfileDialog(); render(); }
   else if (t.id === "themeBtn") setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
   else if (t.id === "moreBtn") { state.shown += PAGE_SIZE; render(); }
   else if (t.id === "watchToggle") {
@@ -486,6 +560,8 @@ async function start() {
     if (!state.meta.regions.some(r => r.code === state.region)) state.region = state.meta.defaultRegion;
     if (!currencyInfo(state.currency)) state.currency = state.meta.defaultCurrency;
     renderStatic();
+    const steamId = store.get("bs-steam-id", null);
+    if (steamId) fetchProfile(steamId).then(p => { setProfile(p); if (state.games.length) render(); }).catch(() => {});
     await loadGames();
     render();
     if (state.selected && overlayPreview() && byId(state.selected)) select(state.selected);
