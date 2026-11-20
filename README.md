@@ -93,7 +93,7 @@ The cron starts filling data within ten minutes. On the free plan the full catal
 | 3 | Games, history and meta API | Done |
 | 4 | Storefront: moods, featured deal, preview, regions, second currency, theme toggle, watchlist, shareable filters | Done |
 | 5 | CI, automatic deploys to Cloudflare, and letting price history build up | Done (needs your Cloudflare secrets) |
-| 6 | Backfill historical lows from IsThereAnyDeal so verdicts are accurate from day one (needs an API key) | Planned |
+| 6 | Backfill historical lows from IsThereAnyDeal so verdicts are accurate from day one | On hold: their API terms forbid apps that compete with IsThereAnyDeal, so this needs their written permission first |
 | 7 | Hide owned games and import a wishlist from a Steam profile (needs a Steam Web API key) | Planned |
 | 8 | Price alerts for watched games by email (needs an email provider) | Planned |
 
