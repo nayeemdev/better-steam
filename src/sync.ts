@@ -6,6 +6,7 @@ const DAY_MS = 24 * HOUR_MS;
 const PRICE_BATCH = 150;
 const DETAILS_PER_RUN = 8;
 const DETAILS_MAX_AGE_MS = 7 * DAY_MS;
+const DETAILS_RETRY_MS = DAY_MS;
 const STEAMSPY_GAP_MS = 1100;
 
 type Task = (db: D1Database, now: Date) => Promise<void>;
@@ -67,6 +68,7 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
 async function syncPrices(db: D1Database, now: Date): Promise<void> {
   const index = (Number(await getState(db, "prices_region")) || 0) % REGIONS.length;
   const region = REGIONS[index];
+  await setState(db, "prices_region", String(index + 1));
   const { results: games } = await db.prepare("SELECT id FROM games WHERE listed = 1 AND is_free = 0 ORDER BY rank").all<{ id: number }>();
 
   const fetched: RegionalPrice[] = [];
@@ -100,7 +102,6 @@ async function syncPrices(db: D1Database, now: Date): Promise<void> {
       ).bind(region.code, stamp, payload),
     ]);
   }
-  await setState(db, "prices_region", String(index + 1));
 }
 
 async function syncDetails(db: D1Database, now: Date): Promise<void> {
@@ -127,6 +128,11 @@ async function syncDetails(db: D1Database, now: Date): Promise<void> {
         details.coop ? 1 : 0, deck, now.toISOString(), id));
     } catch (err) {
       console.error(`details for ${id} failed`, err);
+      // Push a failing game back in the queue so it cannot block the others, and keep it hidden until it has details.
+      const retryAt = new Date(now.getTime() - DETAILS_MAX_AGE_MS + DETAILS_RETRY_MS).toISOString();
+      updates.push(db.prepare(
+        "UPDATE games SET listed = CASE WHEN details_synced_at IS NULL THEN 0 ELSE listed END, details_synced_at = ? WHERE id = ?",
+      ).bind(retryAt, id));
     }
   }
   if (updates.length) await db.batch(updates);
