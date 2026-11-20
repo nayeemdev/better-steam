@@ -1,5 +1,6 @@
 import { discountPercent, ratingScore, valueScore, verdictFor } from "./pricing.ts";
 import { CURRENCIES, DEFAULT_REGION, REGIONS, currencyForCountry, findRegion } from "./regions.ts";
+import { fetchOwned, fetchWishlist, resolveProfile } from "./steam.ts";
 
 const CACHE_SECONDS = 600;
 
@@ -27,6 +28,7 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   const url = new URL(request.url);
 
   if (url.pathname === "/api/meta") return meta(request, env);
+  if (url.pathname === "/api/profile") return profile(env, url);
   if (url.pathname === "/api/games") return cached(request, ctx, () => listGames(env, url));
   const history = url.pathname.match(/^\/api\/games\/(\d+)\/history$/);
   if (history) return cached(request, ctx, () => priceHistory(env, Number(history[1]), url));
@@ -124,4 +126,16 @@ async function priceHistory(env: Env, id: number, url: URL): Promise<Response> {
     trackedSince: row.tracked_since,
     changes: (changes.results as { changed_at: string; price: number }[]).map(c => ({ at: c.changed_at, price: c.price })),
   }, 200, CACHE_SECONDS);
+}
+
+async function profile(env: Env, url: URL): Promise<Response> {
+  const input = url.searchParams.get("id")?.trim();
+  if (!input) return json({ error: "Paste a Steam profile link or ID." }, 400);
+  const who = await resolveProfile(input);
+  if (!who) return json({ error: "We could not find that Steam profile. Check the link and that the profile is public." }, 404);
+  const [wishlist, owned] = await Promise.all([
+    fetchWishlist(who.steamId).catch(() => []),
+    env.STEAM_API_KEY ? fetchOwned(who.steamId, env.STEAM_API_KEY).catch(() => null) : null,
+  ]);
+  return json({ ...who, wishlist, owned });
 }

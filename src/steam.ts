@@ -121,3 +121,44 @@ function decodeEntities(text: string): string {
     .replace(/&gt;/g, ">")
     .replace(/&amp;/g, "&");
 }
+
+export interface SteamProfile {
+  steamId: string;
+  name: string | null;
+}
+
+const STEAM_ID = /^\d{17}$/;
+
+export function profilePath(input: string): string | null {
+  const value = input.trim();
+  const byId = value.match(/profiles\/(\d{17})/)?.[1] ?? (STEAM_ID.test(value) ? value : null);
+  if (byId) return `profiles/${byId}`;
+  const vanity = value.match(/\/id\/([^/?#]+)/)?.[1] ?? (/^[\w-]{2,32}$/.test(value) ? value : null);
+  return vanity ? `id/${encodeURIComponent(vanity)}` : null;
+}
+
+export async function resolveProfile(input: string): Promise<SteamProfile | null> {
+  const path = profilePath(input);
+  if (!path) return null;
+  const res = await fetch(`https://steamcommunity.com/${path}/?xml=1`, { headers: { "User-Agent": HEADERS["User-Agent"] } });
+  if (!res.ok) return null;
+  const xml = await res.text();
+  const steamId = xml.match(/<steamID64>(\d{17})<\/steamID64>/)?.[1];
+  if (!steamId) return null;
+  const name = xml.match(/<steamID><!\[CDATA\[(.*?)\]\]><\/steamID>/)?.[1] ?? null;
+  return { steamId, name };
+}
+
+export async function fetchWishlist(steamId: string): Promise<number[]> {
+  const data = await getJson<{ response?: { items?: { appid: number }[] } }>(
+    `https://api.steampowered.com/IWishlistService/GetWishlist/v1/?steamid=${steamId}`,
+  );
+  return (data.response?.items ?? []).map(i => i.appid);
+}
+
+export async function fetchOwned(steamId: string, apiKey: string): Promise<number[]> {
+  const data = await getJson<{ response?: { games?: { appid: number }[] } }>(
+    `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=${apiKey}&steamid=${steamId}`,
+  );
+  return (data.response?.games ?? []).map(g => g.appid);
+}
