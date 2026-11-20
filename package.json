@@ -1,0 +1,18 @@
+{
+  "name": "better-steam",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate:local": "wrangler d1 migrations apply better-steam --local",
+    "db:migrate": "wrangler d1 migrations apply better-steam --remote",
+    "types": "wrangler types",
+    "typecheck": "wrangler types && tsc --noEmit",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "wrangler": "4.157.0"
+  }
+}
