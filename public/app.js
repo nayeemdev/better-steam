@@ -32,6 +32,14 @@ const store = {
   set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} },
 };
 
+function loadWatchlist() {
+  const saved = store.get("bs-watch", {});
+  const entries = Array.isArray(saved) ? saved.map(id => [id, { region: null, price: null }]) : Object.entries(saved);
+  return new Map(entries.map(([id, w]) => [Number(id), w]));
+}
+
+const saveWatchlist = () => store.set("bs-watch", Object.fromEntries(state.watching));
+
 const params = new URLSearchParams(location.search);
 const state = {
   meta: null,
@@ -49,7 +57,7 @@ const state = {
   shown: PAGE_SIZE,
   selected: Number(params.get("game")) || null,
   hidden: new Set(store.get("bs-hidden", [])),
-  watching: new Set(store.get("bs-watch", [])),
+  watching: loadWatchlist(),
 };
 
 const $ = id => document.getElementById(id);
@@ -248,6 +256,7 @@ function render() {
   document.querySelectorAll(".currency-select").forEach(s => (s.value = state.currency));
   renderMoods();
   renderFeatured();
+  renderAlerts();
 
   const filters = active.map(m => moodLabel(m).toLowerCase());
   let summary = state.watchOnly
@@ -460,11 +469,45 @@ $("profileForm").addEventListener("submit", async e => {
   }
 });
 
+function priceDrops() {
+  const drops = [];
+  for (const [id, watch] of state.watching) {
+    const game = byId(id);
+    if (game && watch.region === state.region && watch.price !== null && game.current < watch.price) drops.push({ game, was: watch.price });
+  }
+  return drops;
+}
+
+function fillWatchBaselines() {
+  let changed = false;
+  for (const [id, watch] of state.watching) {
+    const game = byId(id);
+    if (game && watch.price === null) {
+      state.watching.set(id, { region: state.region, price: game.current });
+      changed = true;
+    }
+  }
+  if (changed) saveWatchlist();
+}
+
+function renderAlerts() {
+  const drops = priceDrops();
+  const el = $("alerts");
+  el.hidden = !drops.length;
+  if (!drops.length) return;
+  el.innerHTML = `<div class="alerts-head">${icon("tag")}<h2>Price drops on your watchlist</h2><button class="linkish" id="dismissDrops">Mark as seen</button></div>
+    <ul>${drops.map(({ game, was }) => `<li><button class="drop" data-open="${game.id}">
+      <span class="drop-name">${esc(game.name)}</span>
+      <span class="num"><b>${money(game.current)}</b> <s>${money(was)}</s> <span class="drop-off">-${Math.round((1 - game.current / was) * 100)}% since you added it</span></span>
+    </button></li>`).join("")}</ul>`;
+}
+
 async function loadGames() {
   $("grid").innerHTML = `<div class="status"><b>Loading games</b>Fetching today's prices.</div>`;
   const res = await fetch(`/api/games?region=${state.region}`);
   if (!res.ok) throw new Error(String(res.status));
   state.games = (await res.json()).games;
+  fillWatchBaselines();
 }
 
 async function changeRegion(region) {
@@ -479,7 +522,7 @@ async function changeRegion(region) {
 }
 
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect");
+  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect,#dismissDrops");
   if (!t) return;
   const d = t.dataset;
   if (d.mood) { state.moods.has(d.mood) ? state.moods.delete(d.mood) : state.moods.add(d.mood); state.watchOnly = false; resetPaging(); render(); }
@@ -506,12 +549,18 @@ document.addEventListener("click", e => {
   else if (t.id === "profileDisconnect") { setProfile(null); store.set("bs-steam-id", null); openProfileDialog(); render(); }
   else if (t.id === "themeBtn") setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
   else if (t.id === "moreBtn") { state.shown += PAGE_SIZE; render(); }
+  else if (t.id === "dismissDrops") {
+    for (const { game } of priceDrops()) state.watching.set(game.id, { region: state.region, price: game.current });
+    saveWatchlist();
+    render();
+  }
   else if (t.id === "watchToggle") {
     const id = state.selected, on = !state.watching.has(id);
-    on ? state.watching.add(id) : state.watching.delete(id);
-    store.set("bs-watch", [...state.watching]);
+    if (on) state.watching.set(id, { region: state.region, price: byId(id).current });
+    else state.watching.delete(id);
+    saveWatchlist();
     render();
-    if (on) toast(`Watching ${byId(id).name}. It stays on your watchlist in this browser.`);
+    if (on) toast(`Watching ${byId(id).name}. Price drops will show at the top of this page.`);
   }
 });
 

@@ -107,6 +107,7 @@ The cron starts filling data within ten minutes. On the free plan the full catal
 | 5 | CI, automatic deploys to Cloudflare, and letting price history build up | Done (needs your Cloudflare secrets) |
 | 6 | Backfill historical lows from IsThereAnyDeal so verdicts are accurate from day one | On hold: their API terms forbid apps that compete with IsThereAnyDeal, so this needs their written permission first |
 | 7 | Connect a Steam profile to filter by wishlist and hide owned games | Done (owned games need a Steam Web API key) |
-| 8 | Price alerts for watched games by email (needs an email provider) | Planned |
+| 8 | Price-drop alerts for watched games, shown at the top of the site | Done |
+| 9 | Send those alerts by email | Planned (needs an email provider and a sending domain) |
 
 Not affiliated with Valve.

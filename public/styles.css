@@ -94,6 +94,15 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .mood .n { font-family: var(--heading); font-size: 28px; line-height: 1; }
 .mood .n small { font-family: var(--body); font-size: 13px; font-weight: 600; opacity: .85; margin-left: 4px; }
 
+.alerts { padding: 16px 18px; border: 2px solid var(--buy); }
+.alerts-head { display: flex; align-items: center; gap: 10px; color: var(--buy); }
+.alerts-head h2 { flex: 1; margin: 0; font-family: var(--heading); font-weight: 400; font-size: 20px; color: var(--ink); }
+.alerts ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.drop { width: 100%; min-height: 44px; border: 0; border-radius: 12px; background: var(--muted); padding: 8px 12px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; text-align: left; }
+.drop-name { font-weight: 700; }
+.drop s { color: var(--sub); }
+.drop-off { color: var(--buy); font-weight: 700; }
+
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px; align-items: start; }
 .results { padding: 18px 18px 22px; min-width: 0; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
