@@ -71,6 +71,17 @@ npm run typecheck
 4. Apply the schema: `npm run db:migrate`
 5. Deploy: `npm run deploy`
 
+### Automatic deploys
+
+`.github/workflows/ci.yml` runs the tests and type check on every push and pull request. To deploy `main` automatically after the steps above:
+
+1. Create a Cloudflare API token with the **Edit Cloudflare Workers** template plus **D1 Edit** permission.
+2. In GitHub, go to **Settings → Secrets and variables → Actions** and add:
+   - secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
+   - variable `DEPLOY_ENABLED` set to `true`
+
+Each push to `main` then applies new migrations and deploys.
+
 The cron starts filling data within ten minutes. On the free plan the full catalogue (about 850 games) has details after roughly 18 hours. Prices for every region are there within the first two hours.
 
 ## Roadmap
@@ -81,7 +92,7 @@ The cron starts filling data within ten minutes. On the free plan the full catal
 | 2 | Sync of catalogue, details, regional prices and exchange rates | Done |
 | 3 | Games, history and meta API | Done |
 | 4 | Storefront: moods, featured deal, preview, regions, second currency, theme toggle, watchlist, shareable filters | Done |
-| 5 | Deploy to Cloudflare and let price history build up | Next |
+| 5 | CI, automatic deploys to Cloudflare, and letting price history build up | Done (needs your Cloudflare secrets) |
 | 6 | Backfill historical lows from IsThereAnyDeal so verdicts are accurate from day one (needs an API key) | Planned |
 | 7 | Hide owned games and import a wishlist from a Steam profile (needs a Steam Web API key) | Planned |
 | 8 | Price alerts for watched games by email (needs an email provider) | Planned |
