@@ -311,9 +311,11 @@ async function loadHistory(g) {
     if (!res.ok) throw new Error(String(res.status));
     const history = await res.json();
     if (state.selected !== g.id || !document.contains(target)) return;
-    const days = Math.floor((Date.now() - Date.parse(history.trackedSince)) / 86_400_000);
-    target.innerHTML = `${chartSvg(history)}
-      <div class="note">Tracking since ${shortDate(history.trackedSince)}.${history.lowest < history.regular ? ` Dashed line is the lowest we have seen, ${money(history.lowest)}.` : ""}${days < 30 ? " The chart fills in as prices change." : ""}</div>`;
+    const since = shortDate(history.trackedSince);
+    target.innerHTML = history.changes.length < 2
+      ? `<div class="note">Tracking since ${since}. The price has not changed since then, so there is no history to chart yet.</div>`
+      : `${chartSvg(history)}
+      <div class="note">Tracking since ${since}.${history.lowest < history.regular ? ` Dashed line is the lowest we have seen, ${money(history.lowest)}.` : ""}</div>`;
   } catch {
     if (document.contains(target)) target.innerHTML = `<div class="note">Price history is not available right now.</div>`;
   }
@@ -522,7 +524,7 @@ async function changeRegion(region) {
 }
 
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect,#dismissDrops");
+  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect,#dismissDrops,#regionBtn");
   if (!t) return;
   const d = t.dataset;
   if (d.mood) { state.moods.has(d.mood) ? state.moods.delete(d.mood) : state.moods.add(d.mood); state.watchOnly = false; resetPaging(); render(); }
@@ -545,6 +547,7 @@ document.addEventListener("click", e => {
   else if (t.id === "wishOnly") { state.wishOnly = !state.wishOnly; resetPaging(); render(); }
   else if (t.id === "hideOwned") { state.hideOwned = !state.hideOwned; store.set("bs-hide-owned", state.hideOwned); resetPaging(); render(); }
   else if (t.id === "profileBtn") openProfileDialog();
+  else if (t.id === "regionBtn") $("regionDialog").showModal();
   else if (t.id === "profileClose") $("profileDialog").close();
   else if (t.id === "profileDisconnect") { setProfile(null); store.set("bs-steam-id", null); openProfileDialog(); render(); }
   else if (t.id === "themeBtn") setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
