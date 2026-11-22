@@ -112,10 +112,10 @@ async function gameDetail(env: Env, id: number, url: URL): Promise<Response> {
   const region = findRegion(url.searchParams.get("region"));
   const [game, price, changes] = await env.DB.batch([
     env.DB.prepare("SELECT description, tags FROM games WHERE id = ?").bind(id),
-    env.DB.prepare("SELECT currency, regular, current, lowest, tracked_since FROM prices WHERE game_id = ? AND region = ?").bind(id, region.code),
+    env.DB.prepare("SELECT currency, regular, current, lowest, first_price, tracked_since FROM prices WHERE game_id = ? AND region = ?").bind(id, region.code),
     env.DB.prepare("SELECT changed_at, price FROM price_changes WHERE game_id = ? AND region = ? ORDER BY changed_at").bind(id, region.code),
   ]);
-  const row = price.results[0] as { currency: string; regular: number; current: number; lowest: number; tracked_since: string } | undefined;
+  const row = price.results[0] as { currency: string; regular: number; current: number; lowest: number; first_price: number; tracked_since: string } | undefined;
   if (!row) return json({ error: "No price for this game in this region" }, 404);
   const info = game.results[0] as { description: string | null; tags: string } | undefined;
   return json({
@@ -127,7 +127,10 @@ async function gameDetail(env: Env, id: number, url: URL): Promise<Response> {
     current: row.current,
     lowest: row.lowest,
     trackedSince: row.tracked_since,
-    changes: (changes.results as { changed_at: string; price: number }[]).map(c => ({ at: c.changed_at, price: c.price })),
+    changes: [
+      { at: row.tracked_since, price: row.first_price },
+      ...(changes.results as { changed_at: string; price: number }[]).map(c => ({ at: c.changed_at, price: c.price })),
+    ],
   }, 200, CACHE_SECONDS);
 }
 

@@ -67,7 +67,9 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
             json_extract(value, '$.positive'), json_extract(value, '$.negative'), json_extract(value, '$.medianMinutes')
      FROM json_each(?1) WHERE true
      ON CONFLICT(id) DO UPDATE SET rank = excluded.rank, positive = excluded.positive,
-       negative = excluded.negative, median_minutes = excluded.median_minutes`,
+       negative = excluded.negative, median_minutes = excluded.median_minutes
+     WHERE games.rank IS NOT excluded.rank OR games.positive IS NOT excluded.positive
+       OR games.negative IS NOT excluded.negative OR games.median_minutes IS NOT excluded.median_minutes`,
   ).bind(JSON.stringify(games)).run();
 
   const next = page + 1;
@@ -119,28 +121,31 @@ async function savePrices(db: D1Database, region: Region, fetched: RegionalPrice
     "SELECT game_id, regular, current FROM prices WHERE region = ? AND game_id IN (SELECT value FROM json_each(?))",
   ).bind(region.code, JSON.stringify(fetched.map(p => p.id))).all<{ game_id: number; regular: number; current: number }>();
   const known = new Map(existing.map(p => [p.game_id, p]));
-  const changed = fetched.filter(p => {
+  const updated = fetched.filter(p => {
     const old = known.get(p.id);
-    return !old || old.current !== p.current || old.regular !== p.regular;
+    return old && (old.current !== p.current || old.regular !== p.regular);
   });
+  const changed = [...fetched.filter(p => !known.has(p.id)), ...updated];
   if (!changed.length) return;
 
   const stamp = now.toISOString();
-  const payload = JSON.stringify(changed);
-  await db.batch([
+  const statements = [
     db.prepare(
-      `INSERT INTO prices (game_id, region, currency, regular, current, lowest, tracked_since, updated_at)
+      `INSERT INTO prices (game_id, region, currency, regular, current, lowest, first_price, tracked_since, updated_at)
        SELECT json_extract(value, '$.id'), ?1, json_extract(value, '$.currency'), json_extract(value, '$.regular'),
-              json_extract(value, '$.current'), json_extract(value, '$.current'), ?2, ?2
+              json_extract(value, '$.current'), json_extract(value, '$.current'), json_extract(value, '$.current'), ?2, ?2
        FROM json_each(?3) WHERE true
        ON CONFLICT(game_id, region) DO UPDATE SET currency = excluded.currency, regular = excluded.regular,
          current = excluded.current, lowest = MIN(prices.lowest, excluded.current), updated_at = excluded.updated_at`,
-    ).bind(region.code, stamp, payload),
-    db.prepare(
+    ).bind(region.code, stamp, JSON.stringify(changed)),
+  ];
+  if (updated.length) {
+    statements.push(db.prepare(
       `INSERT OR IGNORE INTO price_changes (game_id, region, changed_at, price)
        SELECT json_extract(value, '$.id'), ?1, ?2, json_extract(value, '$.current') FROM json_each(?3)`,
-    ).bind(region.code, stamp, payload),
-  ]);
+    ).bind(region.code, stamp, JSON.stringify(updated)));
+  }
+  await db.batch(statements);
 }
 
 async function syncDetails(db: D1Database, now: Date): Promise<void> {
