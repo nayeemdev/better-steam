@@ -1,10 +1,12 @@
-import { CURRENCIES, REGIONS } from "./regions.ts";
+import { CURRENCIES, REGIONS, type Region } from "./regions.ts";
 import { fetchAppDetails, fetchDeckCategory, fetchPrices, fetchTags, fetchTopGames, fetchUsdRates, type RegionalPrice } from "./steam.ts";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const PRICE_BATCH = 150;
-const DETAILS_PER_RUN = 8;
+// Keeps each run under the free plan's 50 outbound requests: 2 daily calls, up to 7 per region, 3 per game.
+const REGIONS_PER_RUN = 2;
+const DETAILS_PER_RUN = 10;
 const DETAILS_MAX_AGE_MS = 7 * DAY_MS;
 const DETAILS_RETRY_MS = DAY_MS;
 const STEAMSPY_GAP_MS = 1100;
@@ -66,9 +68,15 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
 }
 
 async function syncPrices(db: D1Database, now: Date): Promise<void> {
-  const index = (Number(await getState(db, "prices_region")) || 0) % REGIONS.length;
-  const region = REGIONS[index];
-  await setState(db, "prices_region", String(index + 1));
+  const start = Number(await getState(db, "prices_region")) || 0;
+  await setState(db, "prices_region", String((start + REGIONS_PER_RUN) % REGIONS.length));
+  for (let i = 0; i < REGIONS_PER_RUN; i++) {
+    const region = REGIONS[(start + i) % REGIONS.length];
+    await syncRegionPrices(db, region, now).catch(err => console.error(`prices for ${region.code} failed`, err));
+  }
+}
+
+async function syncRegionPrices(db: D1Database, region: Region, now: Date): Promise<void> {
   const { results: games } = await db.prepare("SELECT id FROM games WHERE listed = 1 AND is_free = 0 ORDER BY rank").all<{ id: number }>();
 
   const fetched: RegionalPrice[] = [];

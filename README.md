@@ -9,8 +9,8 @@ Purchases always happen on Steam. This site only links to the store page.
 - **Cloudflare Worker** serves the site from `public/` and a small JSON API from `src/`.
 - **D1** stores games, current prices per store region, price changes and exchange rates.
 - **A cron trigger** runs every 10 minutes and refreshes:
-  - one store region's prices (all ten regions every 100 minutes)
-  - details for eight games (name, description, tags, co-op, Steam Deck status)
+  - prices for two store regions (all ten regions every 50 minutes)
+  - details for ten games (description, tags, co-op, Steam Deck status)
   - the catalogue and exchange rates once a day
 - **Verdicts** ("Lowest price yet", "Good price", "Wait for a sale") come from the prices we have tracked. Until a game has 30 days of history, a discount is shown as "On sale" rather than claiming a record low.
 
@@ -96,7 +96,7 @@ npx wrangler secret put STEAM_API_KEY
 
 For local development, put `STEAM_API_KEY=...` in a `.dev.vars` file instead.
 
-The cron starts filling data within ten minutes. On the free plan the full catalogue (about 850 games) has details after roughly 18 hours. Prices for every region are there within the first two hours.
+The cron starts filling data within ten minutes. Every game with a price is listed straight away, with descriptions, tags and Steam Deck status filling in over about 14 hours on the free plan. Prices for every region are there within the first hour.
 
 ## Roadmap
 

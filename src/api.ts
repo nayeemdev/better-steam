@@ -76,7 +76,7 @@ async function listGames(env: Env, url: URL): Promise<Response> {
             g.positive, g.negative, g.median_minutes,
             p.currency, p.regular, p.current, p.lowest, p.tracked_since
      FROM games g JOIN prices p ON p.game_id = g.id AND p.region = ?
-     WHERE g.listed = 1 AND g.details_synced_at IS NOT NULL
+     WHERE g.listed = 1
      ORDER BY g.rank`,
   ).bind(region.code).all<GameRow>();
 
