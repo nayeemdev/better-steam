@@ -56,7 +56,7 @@ async function syncRates(db: D1Database, now: Date): Promise<void> {
 
 async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
   const page = Number(await getState(db, "catalogue_page")) || 0;
-  if (page === 0 && !isDue(await getState(db, "catalogue_at"), now, DAY_MS)) return;
+  if (page === 0 && !isDue(await getState(db, "catalogue_cycle_at"), now, DAY_MS)) return;
   const games = (await fetchTopGames(page))
     .map((g, i) => ({ ...g, rank: page * CATALOGUE_PAGE_SIZE + i }))
     .filter(g => !g.isFree);
@@ -75,7 +75,7 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
     await setState(db, "catalogue_page", String(next));
   } else {
     await setState(db, "catalogue_page", "0");
-    await setState(db, "catalogue_at", now.toISOString());
+    await setState(db, "catalogue_cycle_at", now.toISOString());
   }
 }
 
