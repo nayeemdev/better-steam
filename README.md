@@ -75,14 +75,16 @@ npm run typecheck
 
 ### Automatic deploys
 
-`.github/workflows/ci.yml` runs the tests and type check on every push and pull request. To deploy `main` automatically after the steps above:
+Deploys run on Cloudflare Workers Builds, connected to this repository:
 
-1. Create a Cloudflare API token with the **Edit Cloudflare Workers** template plus **D1 Edit** permission.
-2. In GitHub, go to **Settings → Secrets and variables → Actions** and add:
-   - secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`
-   - variable `DEPLOY_ENABLED` set to `true`
+1. In the Cloudflare dashboard, go to **Workers & Pages → Create → Import a repository** and pick this repository.
+2. Name the project `better-steam` to match `wrangler.jsonc`.
+3. Leave the build command empty and set the deploy command to `npm run db:migrate && npx wrangler deploy`.
+4. Set the production branch to `main`.
 
-Each push to `main` then applies new migrations and deploys.
+Each push to `main` then applies new migrations and deploys. To deploy by hand, start a new build from the project's **Deployments** tab. If the migration step fails, give the build's API token **D1 Edit** permission.
+
+`.github/workflows/ci.yml` only runs the tests and type check, on every push and pull request.
 
 ### Optional: owned games
 
@@ -104,7 +106,7 @@ The cron starts filling data within ten minutes. On the free plan the full catal
 | 2 | Sync of catalogue, details, regional prices and exchange rates | Done |
 | 3 | Games, history and meta API | Done |
 | 4 | Storefront: moods, featured deal, preview, regions, second currency, theme toggle, watchlist, shareable filters | Done |
-| 5 | CI, automatic deploys to Cloudflare, and letting price history build up | Done (needs your Cloudflare secrets) |
+| 5 | CI on GitHub, automatic deploys through Cloudflare Workers Builds, and letting price history build up | Done (connect the repository in Cloudflare) |
 | 6 | Backfill historical lows from IsThereAnyDeal so verdicts are accurate from day one | On hold: their API terms forbid apps that compete with IsThereAnyDeal, so this needs their written permission first |
 | 7 | Connect a Steam profile to filter by wishlist and hide owned games | Done (owned games need a Steam Web API key) |
 | 8 | Price-drop alerts for watched games, shown at the top of the site | Done |
