@@ -69,7 +69,7 @@ npm run typecheck
 
 1. Log in: `npx wrangler login`
 2. Create the database: `npx wrangler d1 create better-steam`
-3. Copy the printed `database_id` into `wrangler.jsonc`.
+3. Copy the printed `database_id` into `wrangler.jsonc` (already set for the main deployment).
 4. Apply the schema: `npm run db:migrate`
 5. Deploy: `npm run deploy`
 

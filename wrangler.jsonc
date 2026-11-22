@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "better-steam",
-      "database_id": "replace-with-your-d1-database-id",
+      "database_id": "79651a0a-5fcf-4a17-a527-e739c653b102",
       "migrations_dir": "migrations"
     }
   ],
