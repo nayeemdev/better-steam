@@ -24,8 +24,8 @@ interface SteamSpyApp {
   initialprice: string;
 }
 
-export async function fetchTopGames(): Promise<CatalogueEntry[]> {
-  const data = await getJson<Record<string, SteamSpyApp>>("https://steamspy.com/api.php?request=all&page=0");
+export async function fetchTopGames(page: number): Promise<CatalogueEntry[]> {
+  const data = await getJson<Record<string, SteamSpyApp>>(`https://steamspy.com/api.php?request=all&page=${page}`);
   return Object.values(data).map(a => ({
     id: a.appid,
     name: a.name,

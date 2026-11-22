@@ -9,9 +9,9 @@ Purchases always happen on Steam. This site only links to the store page.
 - **Cloudflare Worker** serves the site from `public/` and a small JSON API from `src/`.
 - **D1** stores games, current prices per store region, price changes and exchange rates.
 - **A cron trigger** runs every 10 minutes and refreshes:
-  - prices for two store regions (all ten regions every 50 minutes)
+  - prices for the next 2,250 game and region pairs, picking up where the last run stopped (every region about every three hours)
   - details for ten games (description, tags, co-op, Steam Deck status)
-  - the catalogue and exchange rates once a day
+  - one page of the catalogue (SteamSpy's top 5,000 games, five pages refreshed daily) and exchange rates once a day
 - **Verdicts** ("Lowest price yet", "Good price", "Wait for a sale") come from the prices we have tracked. Until a game has 30 days of history, a discount is shown as "On sale" rather than claiming a record low.
 
 ### Data sources
@@ -30,7 +30,7 @@ Purchases always happen on Steam. This site only links to the store page.
 | --- | --- |
 | `GET /api/meta` | Store regions, currencies with rates, and a default second currency from the visitor's country |
 | `GET /api/games?region=US` | Every listed game with its price and verdict in that region |
-| `GET /api/games/:id/history?region=US` | Tracked price changes for one game |
+| `GET /api/games/:id?region=US` | One game's description, tags and tracked price changes |
 | `GET /api/profile?id=<link or ID>` | A Steam profile's public wishlist, and owned games when a Steam Web API key is set |
 
 ## Local development
@@ -96,7 +96,7 @@ npx wrangler secret put STEAM_API_KEY
 
 For local development, put `STEAM_API_KEY=...` in a `.dev.vars` file instead.
 
-The cron starts filling data within ten minutes. Every game with a price is listed straight away, with descriptions, tags and Steam Deck status filling in over about 14 hours on the free plan. Prices for every region are there within the first hour.
+The cron starts filling data within ten minutes. The catalogue reaches about 4,300 paid games within the first hour, and every game with a price is listed straight away. Prices for every region are there within about three hours, and descriptions, tags and Steam Deck status fill in over about three days on the free plan.
 
 ## Roadmap
 

@@ -4,8 +4,10 @@ import { fetchAppDetails, fetchDeckCategory, fetchPrices, fetchTags, fetchTopGam
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const PRICE_BATCH = 150;
-// Keeps each run under the free plan's 50 outbound requests: 2 daily calls, up to 7 per region, 3 per game.
-const REGIONS_PER_RUN = 2;
+// Keeps each run under the free plan's 50 outbound requests: 1 rates call, 1 catalogue page, 15 price chunks, 3 per game.
+const CATALOGUE_PAGES = 5;
+const CATALOGUE_PAGE_SIZE = 1000;
+const PRICE_REQUESTS_PER_RUN = 15;
 const DETAILS_PER_RUN = 10;
 const DETAILS_MAX_AGE_MS = 7 * DAY_MS;
 const DETAILS_RETRY_MS = DAY_MS;
@@ -53,9 +55,12 @@ async function syncRates(db: D1Database, now: Date): Promise<void> {
 }
 
 async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
-  if (!isDue(await getState(db, "catalogue_at"), now, DAY_MS)) return;
-  const games = (await fetchTopGames()).filter(g => !g.isFree).map((g, rank) => ({ ...g, rank }));
-  // One statement for the whole list keeps us inside D1's per-invocation query limit.
+  const page = Number(await getState(db, "catalogue_page")) || 0;
+  if (page === 0 && !isDue(await getState(db, "catalogue_at"), now, DAY_MS)) return;
+  const games = (await fetchTopGames(page))
+    .map((g, i) => ({ ...g, rank: page * CATALOGUE_PAGE_SIZE + i }))
+    .filter(g => !g.isFree);
+  // One statement for the whole page keeps us inside D1's per-invocation query limit.
   await db.prepare(
     `INSERT INTO games (id, name, rank, positive, negative, median_minutes)
      SELECT json_extract(value, '$.id'), json_extract(value, '$.name'), json_extract(value, '$.rank'),
@@ -64,52 +69,78 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
      ON CONFLICT(id) DO UPDATE SET rank = excluded.rank, positive = excluded.positive,
        negative = excluded.negative, median_minutes = excluded.median_minutes`,
   ).bind(JSON.stringify(games)).run();
-  await setState(db, "catalogue_at", now.toISOString());
+
+  const next = page + 1;
+  if (next < CATALOGUE_PAGES) {
+    await setState(db, "catalogue_page", String(next));
+  } else {
+    await setState(db, "catalogue_page", "0");
+    await setState(db, "catalogue_at", now.toISOString());
+  }
 }
 
+interface PriceCursor {
+  region: number;
+  offset: number;
+}
+
+// Prices are fetched in chunks of 150 games and resume where the previous run stopped,
+// so a catalogue too big for one run still cycles through every region.
 async function syncPrices(db: D1Database, now: Date): Promise<void> {
-  const start = Number(await getState(db, "prices_region")) || 0;
-  await setState(db, "prices_region", String((start + REGIONS_PER_RUN) % REGIONS.length));
-  for (let i = 0; i < REGIONS_PER_RUN; i++) {
-    const region = REGIONS[(start + i) % REGIONS.length];
-    await syncRegionPrices(db, region, now).catch(err => console.error(`prices for ${region.code} failed`, err));
+  const saved = await getState(db, "prices_cursor");
+  let cursor: PriceCursor = saved ? JSON.parse(saved) : { region: 0, offset: 0 };
+  const { results } = await db.prepare("SELECT id FROM games WHERE listed = 1 AND is_free = 0 ORDER BY rank").all<{ id: number }>();
+  const ids = results.map(r => r.id);
+  if (!ids.length) return;
+
+  let requests = PRICE_REQUESTS_PER_RUN;
+  while (requests > 0) {
+    const region = REGIONS[cursor.region % REGIONS.length];
+    const fetched: RegionalPrice[] = [];
+    while (requests > 0 && cursor.offset < ids.length) {
+      const chunk = ids.slice(cursor.offset, cursor.offset + PRICE_BATCH);
+      try {
+        fetched.push(...await fetchPrices(chunk, region.steamCountry));
+      } catch (err) {
+        console.error(`prices for ${region.code} at ${cursor.offset} failed`, err);
+      }
+      cursor.offset += PRICE_BATCH;
+      requests--;
+    }
+    if (cursor.offset >= ids.length) cursor = { region: (cursor.region + 1) % REGIONS.length, offset: 0 };
+    await savePrices(db, region, fetched, now);
+    await setState(db, "prices_cursor", JSON.stringify(cursor));
   }
 }
 
-async function syncRegionPrices(db: D1Database, region: Region, now: Date): Promise<void> {
-  const { results: games } = await db.prepare("SELECT id FROM games WHERE listed = 1 AND is_free = 0 ORDER BY rank").all<{ id: number }>();
-
-  const fetched: RegionalPrice[] = [];
-  for (let i = 0; i < games.length; i += PRICE_BATCH) {
-    fetched.push(...await fetchPrices(games.slice(i, i + PRICE_BATCH).map(g => g.id), region.steamCountry));
-  }
-
-  const { results: existing } = await db.prepare("SELECT game_id, regular, current FROM prices WHERE region = ?")
-    .bind(region.code).all<{ game_id: number; regular: number; current: number }>();
+async function savePrices(db: D1Database, region: Region, fetched: RegionalPrice[], now: Date): Promise<void> {
+  if (!fetched.length) return;
+  const { results: existing } = await db.prepare(
+    "SELECT game_id, regular, current FROM prices WHERE region = ? AND game_id IN (SELECT value FROM json_each(?))",
+  ).bind(region.code, JSON.stringify(fetched.map(p => p.id))).all<{ game_id: number; regular: number; current: number }>();
   const known = new Map(existing.map(p => [p.game_id, p]));
   const changed = fetched.filter(p => {
     const old = known.get(p.id);
     return !old || old.current !== p.current || old.regular !== p.regular;
   });
+  if (!changed.length) return;
 
-  if (changed.length) {
-    const stamp = now.toISOString();
-    const payload = JSON.stringify(changed);
-    await db.batch([
-      db.prepare(
-        `INSERT INTO prices (game_id, region, currency, regular, current, lowest, tracked_since, updated_at)
-         SELECT json_extract(value, '$.id'), ?1, json_extract(value, '$.currency'), json_extract(value, '$.regular'),
-                json_extract(value, '$.current'), json_extract(value, '$.current'), ?2, ?2
-         FROM json_each(?3) WHERE true
-         ON CONFLICT(game_id, region) DO UPDATE SET currency = excluded.currency, regular = excluded.regular,
-           current = excluded.current, lowest = MIN(prices.lowest, excluded.current), updated_at = excluded.updated_at`,
-      ).bind(region.code, stamp, payload),
-      db.prepare(
-        `INSERT OR IGNORE INTO price_changes (game_id, region, changed_at, price)
-         SELECT json_extract(value, '$.id'), ?1, ?2, json_extract(value, '$.current') FROM json_each(?3)`,
-      ).bind(region.code, stamp, payload),
-    ]);
-  }
+  const stamp = now.toISOString();
+  const payload = JSON.stringify(changed);
+  await db.batch([
+    db.prepare(
+      `INSERT INTO prices (game_id, region, currency, regular, current, lowest, tracked_since, updated_at)
+       SELECT json_extract(value, '$.id'), ?1, json_extract(value, '$.currency'), json_extract(value, '$.regular'),
+              json_extract(value, '$.current'), json_extract(value, '$.current'), ?2, ?2
+       FROM json_each(?3) WHERE true
+       ON CONFLICT(game_id, region) DO UPDATE SET currency = excluded.currency, regular = excluded.regular,
+         current = excluded.current, lowest = MIN(prices.lowest, excluded.current), updated_at = excluded.updated_at`,
+    ).bind(region.code, stamp, payload),
+    db.prepare(
+      `INSERT OR IGNORE INTO price_changes (game_id, region, changed_at, price)
+       SELECT json_extract(value, '$.id'), ?1, ?2, json_extract(value, '$.current') FROM json_each(?3)`,
+    ).bind(region.code, stamp, payload),
+  ]);
 }
 
 async function syncDetails(db: D1Database, now: Date): Promise<void> {

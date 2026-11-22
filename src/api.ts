@@ -3,6 +3,7 @@ import { CURRENCIES, DEFAULT_REGION, REGIONS, currencyForCountry, findRegion } f
 import { fetchOwned, fetchWishlist, resolveProfile } from "./steam.ts";
 
 const CACHE_SECONDS = 600;
+const LIST_TAGS = 6;
 
 function json(body: unknown, status = 200, cacheSeconds = 0): Response {
   return new Response(JSON.stringify(body), {
@@ -30,8 +31,8 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   if (url.pathname === "/api/meta") return meta(request, env);
   if (url.pathname === "/api/profile") return profile(env, url);
   if (url.pathname === "/api/games") return cached(request, ctx, () => listGames(env, url));
-  const history = url.pathname.match(/^\/api\/games\/(\d+)\/history$/);
-  if (history) return cached(request, ctx, () => priceHistory(env, Number(history[1]), url));
+  const game = url.pathname.match(/^\/api\/games\/(\d+)$/);
+  if (game) return cached(request, ctx, () => gameDetail(env, Number(game[1]), url));
   return json({ error: "Not found" }, 404);
 }
 
@@ -54,7 +55,6 @@ interface GameRow {
   id: number;
   name: string;
   developer: string | null;
-  description: string | null;
   released: string | null;
   tags: string;
   coop: number;
@@ -72,7 +72,7 @@ interface GameRow {
 async function listGames(env: Env, url: URL): Promise<Response> {
   const region = findRegion(url.searchParams.get("region"));
   const { results } = await env.DB.prepare(
-    `SELECT g.id, g.name, g.developer, g.description, g.released, g.tags, g.coop, g.deck,
+    `SELECT g.id, g.name, g.developer, g.released, g.tags, g.coop, g.deck,
             g.positive, g.negative, g.median_minutes,
             p.currency, p.regular, p.current, p.lowest, p.tracked_since
      FROM games g JOIN prices p ON p.game_id = g.id AND p.region = ?
@@ -91,9 +91,8 @@ async function listGames(env: Env, url: URL): Promise<Response> {
       id: g.id,
       name: g.name,
       developer: g.developer,
-      description: g.description,
       released: g.released,
-      tags: JSON.parse(g.tags) as string[],
+      tags: (JSON.parse(g.tags) as string[]).slice(0, LIST_TAGS),
       coop: g.coop === 1,
       deck: g.deck,
       reviews,
@@ -109,15 +108,19 @@ async function listGames(env: Env, url: URL): Promise<Response> {
   return json({ region: region.code, currency: region.currency, games }, 200, CACHE_SECONDS);
 }
 
-async function priceHistory(env: Env, id: number, url: URL): Promise<Response> {
+async function gameDetail(env: Env, id: number, url: URL): Promise<Response> {
   const region = findRegion(url.searchParams.get("region"));
-  const [price, changes] = await env.DB.batch([
+  const [game, price, changes] = await env.DB.batch([
+    env.DB.prepare("SELECT description, tags FROM games WHERE id = ?").bind(id),
     env.DB.prepare("SELECT currency, regular, current, lowest, tracked_since FROM prices WHERE game_id = ? AND region = ?").bind(id, region.code),
     env.DB.prepare("SELECT changed_at, price FROM price_changes WHERE game_id = ? AND region = ? ORDER BY changed_at").bind(id, region.code),
   ]);
   const row = price.results[0] as { currency: string; regular: number; current: number; lowest: number; tracked_since: string } | undefined;
   if (!row) return json({ error: "No price for this game in this region" }, 404);
+  const info = game.results[0] as { description: string | null; tags: string } | undefined;
   return json({
+    description: info?.description ?? null,
+    tags: info ? JSON.parse(info.tags) : [],
     region: region.code,
     currency: row.currency,
     regular: row.regular,

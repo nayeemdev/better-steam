@@ -311,13 +311,18 @@ function chartSvg(history) {
   </svg>`;
 }
 
-async function loadHistory(g) {
+async function loadDetail(g) {
   const target = $("chart");
   try {
-    const res = await fetch(`/api/games/${g.id}/history?region=${state.region}`);
+    const res = await fetch(`/api/games/${g.id}?region=${state.region}`);
     if (!res.ok) throw new Error(String(res.status));
     const history = await res.json();
     if (state.selected !== g.id || !document.contains(target)) return;
+    if (history.description) {
+      $("blurb").textContent = history.description;
+      $("blurb").hidden = false;
+    }
+    if (history.tags.length) $("tagChips").innerHTML = history.tags.slice(0, 8).map(t => `<span>${esc(t)}</span>`).join("");
     const since = shortDate(history.trackedSince);
     target.innerHTML = history.changes.length < 2
       ? `<div class="note">Tracking since ${since}. The price has not changed since then, so there is no history to chart yet.</div>`
@@ -369,15 +374,15 @@ function renderPreview() {
         <div>${icon("users")}<dt>Players</dt><dd>${g.coop ? "Solo or co-op" : "Solo or online"}</dd></div>
         <div>${icon("deck")}<dt>Steam Deck</dt><dd>${DECK_LABEL[g.deck] ?? "Unknown"}</dd></div>
       </dl>
-      ${g.description ? `<p class="blurb">${esc(g.description)}</p>` : ""}
-      ${g.tags.length ? `<div class="chips">${g.tags.slice(0, 8).map(t => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
+      <p class="blurb" id="blurb" hidden></p>
+      <div class="chips" id="tagChips">${g.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div>
       <div class="actions">
         <a class="btn primary" href="https://store.steampowered.com/app/${g.id}/" target="_blank" rel="noopener">Buy on Steam · ${money(g.current)} ${icon("ext")}</a>
         <button class="btn" id="watchToggle" aria-pressed="${watching}">${icon("heart")}${watching ? "Watching" : "Watch price"}</button>
         <button class="btn" data-hide="${g.id}">${icon("x")}Not for me</button>
       </div>
     </div>`;
-  loadHistory(g);
+  loadDetail(g);
 }
 
 let lastFocus = null;
