@@ -188,10 +188,12 @@ function renderStatic() {
 
 function renderMoods() {
   const active = MOODS.filter(m => state.moods.has(m.id));
+  $("moods").parentElement.classList.toggle("has-active", active.length > 0);
   $("moods").innerHTML = MOODS.map(m => {
     const on = state.moods.has(m.id);
     const count = state.games.filter(g => passes(g, on ? active : [...active, m])).length;
-    return `<button class="mood" data-mood="${m.id}" style="--c:${m.color};--on:${inkOn(m.color)}" aria-pressed="${on}">
+    return `<button class="mood${count ? "" : " is-empty"}" data-mood="${m.id}" style="--c:${m.color};--on:${inkOn(m.color)}" aria-pressed="${on}">
+      <svg class="i mark" aria-hidden="true"><use href="#i-${m.icon}"/></svg>
       <span class="top"><span class="ico">${icon(m.icon)}</span><span class="check">${icon("check")}</span></span>
       <span><span class="n num">${count}<small>${count === 1 ? "game" : "games"}</small></span><span class="mood-label">${esc(moodLabel(m))}</span></span>
     </button>`;
@@ -207,7 +209,7 @@ function renderFeatured() {
   const eyebrow = { buy: "Lowest price yet", good: "Good price today", sale: `${pick.discount}% off right now` }[pick.verdict] ?? "Top rated";
   const alt = converted(pick.current);
   el.hidden = false;
-  el.innerHTML = `<img src="${imageUrl(pick.id, "header")}" alt="" crossorigin="anonymous">
+  el.innerHTML = `<img class="fade" src="${imageUrl(pick.id, "header")}" alt="">
     <span class="eyebrow">${icon("star")} ${esc(eyebrow)}</span>
     <h2>${esc(pick.name)}</h2>
     <div class="row">
@@ -225,7 +227,8 @@ function cardHtml(g) {
   return `<article class="card"${tint ? ` style="--tint:${tint}"` : ""} data-card="${g.id}" aria-current="${state.selected === g.id}">
     <button class="open" data-open="${g.id}" aria-label="${esc(g.name)}, ${esc(v.word)}, ${money(g.current)}">
       <div class="art">
-        <img src="${imageUrl(g.id, "library_600x900")}" alt="" loading="lazy" crossorigin="anonymous" data-tint-for="${g.id}" width="600" height="900">
+        <span class="art-fallback" aria-hidden="true">${esc(g.name)}</span>
+        <img class="fade" src="${imageUrl(g.id, "library_600x900")}" alt="" loading="lazy" crossorigin="anonymous" data-tint-for="${g.id}" width="600" height="900">
         <span class="badge v-${g.verdict}">${g.verdict === "buy" ? icon("tag") : ""}${esc(v.word)}</span>
         ${g.discount ? `<span class="off-flag num">-${g.discount}%</span>` : ""}
         ${isOwned(g) ? '<span class="owned">Owned</span>' : ""}
@@ -280,6 +283,7 @@ function render() {
       : `<div class="empty"><b>Nothing matches all of that</b>${last ? `Try without <button class="linkish" data-drop="${last.id}">${esc(moodLabel(last).toLowerCase())}</button>.` : "Try a different search."}</div>`;
   } else {
     $("grid").innerHTML = list.slice(0, state.shown).map(cardHtml).join("");
+    markLoadedImages($("grid"));
   }
   $("more").hidden = list.length <= state.shown;
 
@@ -318,10 +322,10 @@ async function loadDetail(g) {
     if (!res.ok) throw new Error(String(res.status));
     const history = await res.json();
     if (state.selected !== g.id || !document.contains(target)) return;
+    const blurb = $("blurb");
     if (history.description) {
-      $("blurb").textContent = history.description;
-      $("blurb").hidden = false;
-    }
+      blurb.outerHTML = `<p class="blurb" id="blurb">${esc(history.description)}</p>`;
+    } else blurb.remove();
     if (history.tags.length) $("tagChips").innerHTML = history.tags.slice(0, 8).map(t => `<span>${esc(t)}</span>`).join("");
     const since = shortDate(history.trackedSince);
     target.innerHTML = history.changes.length < 2
@@ -329,7 +333,9 @@ async function loadDetail(g) {
       : `${chartSvg(history)}
       <div class="note">Tracking since ${since}.${history.lowest < history.regular ? ` Dashed line is the lowest we have seen, ${money(history.lowest)}.` : ""}</div>`;
   } catch {
-    if (document.contains(target)) target.innerHTML = `<div class="note">Price history is not available right now.</div>`;
+    if (!document.contains(target)) return;
+    target.innerHTML = `<div class="note">Price history is not available right now.</div>`;
+    $("blurb")?.remove();
   }
 }
 
@@ -348,7 +354,7 @@ function renderPreview() {
   el.style.setProperty("--tint-ink", tint.startsWith("#") ? inkOn(tint) : "#fff");
   el.innerHTML = `
     <div class="p-hero">
-      <img src="${imageUrl(g.id, "header")}" alt="">
+      <div class="shot"><img class="fade" src="${imageUrl(g.id, "header")}" alt=""></div>
       <button class="close" id="closeBtn" aria-label="Close preview">${icon("x")}</button>
     </div>
     <div class="p-body">
@@ -366,7 +372,7 @@ function renderPreview() {
       </div>
       <div class="chart">
         <p class="label">Price history</p>
-        <div id="chart"><div class="note">Loading price history.</div></div>
+        <div id="chart"><div class="skeleton skeleton-chart" aria-label="Loading price history"></div></div>
       </div>
       <dl class="facts">
         <div>${icon("star")}<dt>Reviews</dt><dd class="num">${g.positivePct !== null ? `${g.positivePct}% of ${compact(g.reviews)}` : "No reviews yet"}</dd></div>
@@ -374,7 +380,7 @@ function renderPreview() {
         <div>${icon("users")}<dt>Players</dt><dd>${g.coop ? "Solo or co-op" : "Solo or online"}</dd></div>
         <div>${icon("deck")}<dt>Steam Deck</dt><dd>${DECK_LABEL[g.deck] ?? "Unknown"}</dd></div>
       </dl>
-      <p class="blurb" id="blurb" hidden></p>
+      <div id="blurb" class="skeleton-lines" aria-label="Loading description"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
       <div class="chips" id="tagChips">${g.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div>
       <div class="actions">
         <a class="btn primary" href="https://store.steampowered.com/app/${g.id}/" target="_blank" rel="noopener">Buy on Steam · ${money(g.current)} ${icon("ext")}</a>
@@ -516,8 +522,19 @@ function renderAlerts() {
     </button></li>`).join("")}</ul>`;
 }
 
+function placeholderCards() {
+  const card = `<div class="card is-placeholder" aria-hidden="true"><div class="art skeleton"></div><div class="skeleton"></div><div class="skeleton" style="width:60%"></div></div>`;
+  return card.repeat(8);
+}
+
+function markLoadedImages(root) {
+  root.querySelectorAll("img.fade").forEach(img => {
+    if (img.complete && img.naturalWidth) img.classList.add("is-loaded");
+  });
+}
+
 async function loadGames() {
-  $("grid").innerHTML = `<div class="status"><b>Loading games</b>Fetching today's prices.</div>`;
+  $("grid").innerHTML = placeholderCards();
   const res = await fetch(`/api/games?region=${state.region}`);
   if (!res.ok) throw new Error(String(res.status));
   state.games = (await res.json()).games;
@@ -581,7 +598,9 @@ document.addEventListener("click", e => {
 
 document.addEventListener("load", e => {
   const img = e.target;
-  if (!(img instanceof HTMLImageElement) || !img.dataset.tintFor) return;
+  if (!(img instanceof HTMLImageElement)) return;
+  img.classList.add("is-loaded");
+  if (!img.dataset.tintFor) return;
   const id = Number(img.dataset.tintFor);
   if (tints.has(id)) return;
   const tint = tintFrom(img);
@@ -598,7 +617,7 @@ document.addEventListener("error", e => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement)) return;
   if (img.src.includes("library_600x900")) img.src = img.src.replace("library_600x900", "header");
-  else img.style.visibility = "hidden";
+  else img.classList.add("is-missing");
 }, true);
 
 document.addEventListener("keydown", e => {
@@ -614,8 +633,16 @@ document.querySelectorAll(".currency-select").forEach(s => s.addEventListener("c
 }));
 document.querySelectorAll(".region-select").forEach(s => s.addEventListener("change", e => changeRegion(e.target.value)));
 
+new IntersectionObserver(entries => {
+  if (entries.some(e => e.isIntersecting) && !$("more").hidden) {
+    state.shown += PAGE_SIZE;
+    render();
+  }
+}, { rootMargin: "600px" }).observe($("more"));
+
 async function start() {
   setTheme(store.get("bs-theme", "light"));
+  $("grid").innerHTML = placeholderCards();
   $("q").value = state.query;
   try {
     const res = await fetch("/api/meta");
