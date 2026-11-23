@@ -300,6 +300,7 @@ function render() {
   renderMoods();
   renderFeatured();
   renderAlerts();
+  renderSaleBanner();
 
   const filters = active.map(m => moodLabel(m).toLowerCase());
   let summary = state.watchOnly
@@ -447,6 +448,7 @@ function renderPreview() {
       </dl>
       <div id="blurb" class="skeleton-lines" aria-label="Loading description"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
       <div class="chips" id="tagChips">${g.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div>
+      ${similarHtml(g)}
       <div class="actions">
         <a class="btn primary" href="https://store.steampowered.com/app/${g.id}/" target="_blank" rel="noopener">${g.free ? "Play free on Steam" : `Buy on Steam · ${money(g.current)}`} ${icon("ext")}</a>
         ${g.free ? "" : `<button class="btn" id="watchToggle" aria-pressed="${watching}">${icon("heart")}${watching ? "Watching" : "Watch price"}</button>`}
@@ -575,6 +577,23 @@ function fillWatchBaselines() {
   if (changed) saveWatchlist();
 }
 
+const SALE_SHARE = 0.45;
+const SALE_MIN_GAMES = 200;
+const today = () => new Date().toISOString().slice(0, 10);
+
+// Steam does not publish sale dates, so a sale is inferred from how much of the store is discounted.
+function renderSaleBanner() {
+  const el = $("saleBanner");
+  const paid = state.games.filter(g => !g.free);
+  const share = paid.length ? paid.filter(g => g.discount > 0).length / paid.length : 0;
+  el.hidden = paid.length < SALE_MIN_GAMES || share < SALE_SHARE || store.get("bs-sale-hidden", null) === today();
+  if (el.hidden) return;
+  el.innerHTML = `<span class="sale-icon">${icon("tag")}</span>
+    <div class="sale-text"><b>A big Steam sale looks to be on</b><span>${Math.round(share * 100)}% of games in this store region are discounted right now.</span></div>
+    <button class="btn primary" id="saleDeals">Show the best deals</button>
+    <button class="linkish" id="saleHide">Hide for today</button>`;
+}
+
 function renderAlerts() {
   const drops = priceDrops();
   const el = $("alerts");
@@ -598,12 +617,45 @@ function markLoadedImages(root) {
   });
 }
 
+let tagWeights = new Map();
+
+// Rare tags say more about a game than common ones like "Singleplayer", so they count for more.
+function weighTags() {
+  const counts = new Map();
+  for (const g of state.games) for (const t of g.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+  tagWeights = new Map([...counts].map(([t, n]) => [t, Math.log(state.games.length / n)]));
+}
+
+function similarGames(g) {
+  const tags = new Set(g.tags);
+  if (!tags.size) return [];
+  return state.games
+    .filter(o => o.id !== g.id && !state.hidden.has(o.id) && !isOwned(o))
+    .map(o => ({ game: o, score: o.tags.reduce((sum, t) => sum + (tags.has(t) ? tagWeights.get(t) ?? 0 : 0), 0) }))
+    .filter(x => x.score > 2)
+    .sort((a, b) => b.score + b.game.rating + (b.game.discount ? 0.5 : 0) - (a.score + a.game.rating + (a.game.discount ? 0.5 : 0)))
+    .slice(0, 4)
+    .map(x => x.game);
+}
+
+function similarHtml(g) {
+  const picks = similarGames(g);
+  if (!picks.length) return "";
+  return `<div><p class="label">You might also like</p><div class="similar">${picks.map(o => `
+    <button class="similar-card" data-open="${o.id}">
+      <span class="shot"><img class="fade" src="${imageUrl(o, "header")}" alt="" loading="lazy"></span>
+      <span class="similar-name">${esc(o.name)}</span>
+      <span class="num similar-price">${priceLabel(o)}${o.discount ? ` <em>-${o.discount}%</em>` : ""}</span>
+    </button>`).join("")}</div></div>`;
+}
+
 async function loadGames() {
   $("grid").innerHTML = placeholderCards();
   const res = await fetch(`/api/games?region=${state.region}`);
   if (!res.ok) throw new Error(String(res.status));
   state.games = (await res.json()).games;
   fillWatchBaselines();
+  weighTags();
 }
 
 const NOT_A_GAME = /\b(dlc|soundtrack|ost|demo|season pass|toolkit|artbook|upgrade)\b/i;
@@ -662,7 +714,7 @@ async function changeRegion(region) {
 }
 
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect,#dismissDrops,#regionBtn");
+  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect,#dismissDrops,#regionBtn,#saleDeals,#saleHide");
   if (!t) return;
   const d = t.dataset;
   if (d.mood) { state.moods.has(d.mood) ? state.moods.delete(d.mood) : state.moods.add(d.mood); state.watchOnly = false; resetPaging(); render(); }
@@ -686,6 +738,16 @@ document.addEventListener("click", e => {
   else if (t.id === "hideOwned") { state.hideOwned = !state.hideOwned; store.set("bs-hide-owned", state.hideOwned); resetPaging(); render(); }
   else if (t.id === "profileBtn") openProfileDialog();
   else if (t.id === "regionBtn") $("regionDialog").showModal();
+  else if (t.id === "saleHide") { store.set("bs-sale-hidden", today()); render(); }
+  else if (t.id === "saleDeals") {
+    state.moods = new Set(["deals"]);
+    state.sort = "value";
+    state.query = "";
+    $("q").value = "";
+    resetPaging();
+    render();
+    $("summary").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   else if (t.id === "profileClose") $("profileDialog").close();
   else if (t.id === "profileDisconnect") { setProfile(null); store.set("bs-steam-id", null); openProfileDialog(); render(); }
   else if (t.id === "themeBtn") setTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark");
@@ -729,8 +791,27 @@ document.addEventListener("error", e => {
   else img.classList.add("is-missing");
 }, true);
 
+const ARROW_STEP = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: "up", ArrowDown: "down" };
+
+function moveSelection(key) {
+  const cards = [...document.querySelectorAll("#grid [data-card]")];
+  if (!cards.length) return;
+  const columns = getComputedStyle($("grid")).gridTemplateColumns.split(" ").length;
+  const step = ARROW_STEP[key] === "up" ? -columns : ARROW_STEP[key] === "down" ? columns : ARROW_STEP[key];
+  const index = cards.findIndex(c => Number(c.dataset.card) === state.selected);
+  const next = cards[index < 0 ? 0 : Math.min(cards.length - 1, Math.max(0, index + step))];
+  next.querySelector(".open").focus({ preventScroll: true });
+  next.scrollIntoView({ block: "nearest" });
+  if (Number(next.dataset.card) !== state.selected) select(Number(next.dataset.card));
+}
+
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") closePreview();
+  const typing = ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName);
+  if (e.key in ARROW_STEP && !typing && !e.altKey && !e.metaKey && !e.ctrlKey && !document.querySelector("dialog[open]") && !$("preview").classList.contains("open")) {
+    e.preventDefault();
+    moveSelection(e.key);
+  }
   if (e.key === "/" && !["INPUT", "SELECT"].includes(document.activeElement.tagName)) { e.preventDefault(); $("q").focus(); }
 });
 
