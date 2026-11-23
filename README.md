@@ -13,6 +13,7 @@ Purchases always happen on Steam. This site only links to the store page.
   - details for ten games (description, tags, co-op, Steam Deck status)
   - image paths for 100 games, since newer Steam apps keep their art under hashed folders
   - one page of the catalogue (Steam's top 500 sellers, then SteamSpy's top 5,000 most owned games, ten pages refreshed daily) and exchange rates once a day
+- **Shared links** like `/?game=4435490` get the game's title, US price, verdict, review score and header image in their link preview tags, added by the Worker.
 - **Verdicts** ("Lowest price yet", "Good price", "Wait for a sale") come from the prices we have tracked. Until a game has 30 days of history, a discount is shown as "On sale" rather than claiming a record low.
 
 ### Data sources
