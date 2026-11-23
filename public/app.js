@@ -154,14 +154,29 @@ function searchKey(g) {
   return g.searchKey;
 }
 
+let parsedQuery = { text: null, tokens: [], joined: "", phrase: "" };
+const scores = new Map();
+
+function queryTokens() {
+  if (parsedQuery.text !== state.query) {
+    const tokens = searchWords(state.query).map(w => ROMAN[w] ?? w);
+    parsedQuery = { text: state.query, tokens, joined: tokens.join(""), phrase: ` ${tokens.join(" ")}` };
+    scores.clear();
+  }
+  return parsedQuery;
+}
+
 function searchScore(g) {
-  const tokens = searchWords(state.query).map(w => ROMAN[w] ?? w);
-  if (!tokens.length) return 1;
+  const q = queryTokens();
+  if (!q.tokens.length) return 1;
+  if (scores.has(g.id)) return scores.get(g.id);
   const key = searchKey(g);
-  const joined = tokens.join("");
-  if (key.acronym.startsWith(joined) || key.compact.startsWith(joined)) return 3;
-  if (key.text.includes(` ${tokens.join(" ")}`)) return 2;
-  return tokens.every(t => key.text.includes(` ${t}`) || key.acronym.includes(t) || key.compact.includes(t)) ? 1 : 0;
+  let score = 0;
+  if (key.acronym.startsWith(q.joined) || key.compact.startsWith(q.joined)) score = 3;
+  else if (key.text.includes(q.phrase)) score = 2;
+  else if (q.tokens.every(t => key.text.includes(` ${t}`) || key.acronym.includes(t) || key.compact.includes(t))) score = 1;
+  scores.set(g.id, score);
+  return score;
 }
 
 function writeUrl() {
@@ -388,12 +403,26 @@ function regionPricesHtml(prices) {
     <p class="note">You can only buy in the store region of your Steam account. Conversions use today's exchange rates.</p>`;
 }
 
+const DETAIL_TTL_MS = 10 * 60_000;
+const details = new Map();
+
+function fetchDetail(id) {
+  const key = `${id}:${state.region}`;
+  const hit = details.get(key);
+  if (hit && Date.now() - hit.at < DETAIL_TTL_MS) return hit.promise;
+  const promise = fetch(`/api/games/${id}?region=${state.region}`).then(res => {
+    if (!res.ok) throw new Error(String(res.status));
+    return res.json();
+  });
+  details.set(key, { at: Date.now(), promise });
+  promise.catch(() => details.delete(key));
+  return promise;
+}
+
 async function loadDetail(g) {
   const target = $("chart");
   try {
-    const res = await fetch(`/api/games/${g.id}?region=${state.region}`);
-    if (!res.ok) throw new Error(String(res.status));
-    const history = await res.json();
+    const history = await fetchDetail(g.id);
     if (state.selected !== g.id || !document.contains(target)) return;
     const blurb = $("blurb");
     if (history.description) {
@@ -419,9 +448,14 @@ async function loadDetail(g) {
   }
 }
 
+let previewKey = "";
+
 function renderPreview() {
   const el = $("preview");
   const g = byId(state.selected);
+  const key = g ? [g.id, state.region, state.currency, g.current, state.watching.has(g.id), isOwned(g), isWished(g)].join("|") : "none";
+  if (key === previewKey) return;
+  previewKey = key;
   if (!g) {
     el.innerHTML = `<div class="p-body"><p class="byline">Pick a game to see whether it is worth buying today.</p></div>`;
     return;
@@ -478,11 +512,13 @@ function renderPreview() {
 
 let lastFocus = null;
 function select(id) {
-  state.selected = id;
-  document.querySelectorAll("[data-card]").forEach(c => c.setAttribute("aria-current", Number(c.dataset.card) === id));
-  renderPreview();
-  writeUrl();
-  $("preview").scrollTop = 0;
+  if (id !== state.selected) {
+    state.selected = id;
+    document.querySelectorAll("[data-card]").forEach(c => c.setAttribute("aria-current", Number(c.dataset.card) === id));
+    renderPreview();
+    writeUrl();
+    $("preview").scrollTop = 0;
+  }
   if (overlayPreview()) {
     lastFocus = document.activeElement;
     $("preview").classList.add("open");
