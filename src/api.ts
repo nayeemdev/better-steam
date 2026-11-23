@@ -9,12 +9,16 @@ const LIST_TAGS = 6;
 const DEFAULT_CAPSULE = "library_600x900.jpg";
 const DEFAULT_HEADER = "header.jpg";
 
-function json(body: unknown, status = 200, cacheSeconds = 0): Response {
+const META_BROWSER_SECONDS = 300;
+
+function json(body: unknown, status = 200, cacheSeconds = 0, scope: "public" | "private" = "public"): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": cacheSeconds ? `public, max-age=${Math.min(cacheSeconds, BROWSER_CACHE_SECONDS)}, s-maxage=${cacheSeconds}` : "no-store",
+      "Cache-Control": !cacheSeconds ? "no-store"
+        : scope === "private" ? `private, max-age=${cacheSeconds}`
+        : `public, max-age=${Math.min(cacheSeconds, BROWSER_CACHE_SECONDS)}, s-maxage=${cacheSeconds}`,
     },
   });
 }
@@ -47,10 +51,21 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   return json({ error: "Not found" }, 404);
 }
 
+type RateRow = { currency: string; per_usd: number; updated_at: string };
+const RATES_MEMORY_MS = 10 * 60_000;
+let ratesInMemory: { at: number; rows: RateRow[] } | null = null;
+
+// Rates change once a day, so each Worker instance keeps them in memory instead of asking D1 on every page load.
+async function loadRates(env: Env): Promise<RateRow[]> {
+  if (ratesInMemory && Date.now() - ratesInMemory.at < RATES_MEMORY_MS) return ratesInMemory.rows;
+  const { results } = await env.DB.prepare("SELECT currency, per_usd, updated_at FROM rates").all<RateRow>();
+  if (results.length) ratesInMemory = { at: Date.now(), rows: results };
+  return results;
+}
+
 async function meta(request: Request, env: Env): Promise<Response> {
   const country = (request.cf?.country as string | undefined) ?? null;
-  const { results: rates } = await env.DB.prepare("SELECT currency, per_usd, updated_at FROM rates")
-    .all<{ currency: string; per_usd: number; updated_at: string }>();
+  const rates = await loadRates(env);
   const perUsd = new Map(rates.map(r => [r.currency, r.per_usd]));
   return json({
     country,
@@ -59,7 +74,7 @@ async function meta(request: Request, env: Env): Promise<Response> {
     regions: REGIONS.map(({ code, name, currency }) => ({ code, name, currency })),
     currencies: CURRENCIES.filter(c => perUsd.has(c.code)).map(c => ({ ...c, perUsd: perUsd.get(c.code) })),
     ratesUpdatedAt: rates[0]?.updated_at ?? null,
-  });
+  }, 200, META_BROWSER_SECONDS, "private");
 }
 
 interface GameRow {
