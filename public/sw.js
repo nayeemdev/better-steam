@@ -1,4 +1,4 @@
-const CACHE = "better-steam-v1";
+const CACHE = "better-steam-v2";
 const SHELL = ["/", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
 
 self.addEventListener("install", event => {
@@ -12,18 +12,24 @@ self.addEventListener("activate", event => {
 });
 
 // Network first so new deploys and prices show straight away; the cache is only an offline fallback.
+// Only the page, its files and the game list are kept, so the cache stays small.
+const OFFLINE_API = /^\/api\/(meta|games)$/;
+
 self.addEventListener("fetch", event => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== location.origin) return;
+  const navigation = event.request.mode === "navigate";
+  if (!navigation && !SHELL.includes(url.pathname) && !OFFLINE_API.test(url.pathname)) return;
+  const key = navigation ? "/" : event.request;
   event.respondWith(
     fetch(event.request)
       .then(response => {
         if (response.ok) {
           const copy = response.clone();
-          caches.open(CACHE).then(cache => cache.put(event.request, copy));
+          caches.open(CACHE).then(cache => cache.put(key, copy));
         }
         return response;
       })
-      .catch(async () => (await caches.match(event.request)) ?? (event.request.mode === "navigate" ? caches.match("/") : Response.error())),
+      .catch(async () => (await caches.match(key)) ?? Response.error()),
   );
 });
