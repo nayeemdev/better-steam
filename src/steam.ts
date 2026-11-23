@@ -36,10 +36,52 @@ export async function fetchTopGames(page: number): Promise<CatalogueEntry[]> {
   }));
 }
 
-export async function fetchTags(id: number): Promise<string[]> {
-  const data = await getJson<{ tags?: Record<string, number> | unknown[] }>(`https://steamspy.com/api.php?request=appdetails&appid=${id}`);
-  if (!data.tags || Array.isArray(data.tags)) return [];
-  return Object.entries(data.tags).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([tag]) => tag);
+export interface SteamSpyDetails {
+  tags: string[];
+  positive: number;
+  negative: number;
+  medianMinutes: number;
+}
+
+export async function fetchSteamSpyDetails(id: number): Promise<SteamSpyDetails> {
+  const data = await getJson<{ tags?: Record<string, number> | unknown[]; positive?: number; negative?: number; median_forever?: number }>(
+    `https://steamspy.com/api.php?request=appdetails&appid=${id}`,
+  );
+  const tags = data.tags && !Array.isArray(data.tags)
+    ? Object.entries(data.tags).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([tag]) => tag)
+    : [];
+  return { tags, positive: data.positive ?? 0, negative: data.negative ?? 0, medianMinutes: data.median_forever ?? 0 };
+}
+
+export const TOP_SELLERS_PAGE_SIZE = 100;
+
+export async function fetchTopSellers(page: number): Promise<{ id: number; name: string }[]> {
+  const data = await getJson<{ items?: { name: string; logo: string }[] }>(
+    `https://store.steampowered.com/search/results/?json=1&filter=topsellers&cc=us&count=${TOP_SELLERS_PAGE_SIZE}&start=${page * TOP_SELLERS_PAGE_SIZE}`,
+  );
+  return (data.items ?? []).flatMap(item => {
+    const id = Number(item.logo.match(/\/apps\/(\d+)\//)?.[1]);
+    return id ? [{ id, name: item.name }] : [];
+  });
+}
+
+export interface StoreSearchResult {
+  id: number;
+  name: string;
+  image: string;
+  price: { currency: string; regular: number; current: number } | null;
+}
+
+export async function searchStore(term: string, steamCountry: string): Promise<StoreSearchResult[]> {
+  const data = await getJson<{ items?: { id: number; type: string; name: string; tiny_image: string; price?: { currency: string; initial: number; final: number } }[] }>(
+    `https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(term)}&cc=${steamCountry}&l=english`,
+  );
+  return (data.items ?? []).filter(i => i.type === "app").map(i => ({
+    id: i.id,
+    name: i.name,
+    image: i.tiny_image,
+    price: i.price ? { currency: i.price.currency, regular: i.price.initial, current: i.price.final } : null,
+  }));
 }
 
 export interface AppDetails {

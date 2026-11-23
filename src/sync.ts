@@ -1,10 +1,11 @@
 import { CURRENCIES, REGIONS, type Region } from "./regions.ts";
-import { fetchAppDetails, fetchDeckCategory, fetchPrices, fetchTags, fetchTopGames, fetchUsdRates, type RegionalPrice } from "./steam.ts";
+import { fetchAppDetails, fetchDeckCategory, fetchPrices, fetchSteamSpyDetails, fetchTopGames, fetchTopSellers, fetchUsdRates, TOP_SELLERS_PAGE_SIZE, type RegionalPrice } from "./steam.ts";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const PRICE_BATCH = 150;
 // Keeps each run under the free plan's 50 outbound requests: 1 rates call, 1 catalogue page, 15 price chunks, 3 per game.
+const TOP_SELLER_PAGES = 5;
 const CATALOGUE_PAGES = 5;
 const CATALOGUE_PAGE_SIZE = 1000;
 const PRICE_REQUESTS_PER_RUN = 15;
@@ -54,30 +55,45 @@ async function syncRates(db: D1Database, now: Date): Promise<void> {
   await setState(db, "rates_at", now.toISOString());
 }
 
+// The catalogue combines Steam's current top sellers, which catch new releases quickly,
+// with SteamSpy's all-time most owned games. One page is read per run.
 async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
-  const page = Number(await getState(db, "catalogue_page")) || 0;
-  if (page === 0 && !isDue(await getState(db, "catalogue_cycle_at"), now, DAY_MS)) return;
-  const games = (await fetchTopGames(page))
-    .map((g, i) => ({ ...g, rank: page * CATALOGUE_PAGE_SIZE + i }))
-    .filter(g => !g.isFree);
-  // One statement for the whole page keeps us inside D1's per-invocation query limit.
-  await db.prepare(
-    `INSERT INTO games (id, name, rank, positive, negative, median_minutes)
-     SELECT json_extract(value, '$.id'), json_extract(value, '$.name'), json_extract(value, '$.rank'),
-            json_extract(value, '$.positive'), json_extract(value, '$.negative'), json_extract(value, '$.medianMinutes')
-     FROM json_each(?1) WHERE true
-     ON CONFLICT(id) DO UPDATE SET rank = excluded.rank, positive = excluded.positive,
-       negative = excluded.negative, median_minutes = excluded.median_minutes
-     WHERE games.rank IS NOT excluded.rank OR games.positive IS NOT excluded.positive
-       OR games.negative IS NOT excluded.negative OR games.median_minutes IS NOT excluded.median_minutes`,
-  ).bind(JSON.stringify(games)).run();
+  const page = Number(await getState(db, "catalogue_source_page")) || 0;
+  if (page === 0 && !isDue(await getState(db, "catalogue_round_at"), now, DAY_MS)) return;
+
+  if (page < TOP_SELLER_PAGES) {
+    const sellers = (await fetchTopSellers(page)).map((g, i) => ({ ...g, rank: page * TOP_SELLERS_PAGE_SIZE + i }));
+    await db.prepare(
+      `INSERT INTO games (id, name, rank)
+       SELECT json_extract(value, '$.id'), json_extract(value, '$.name'), json_extract(value, '$.rank')
+       FROM json_each(?1) WHERE true
+       ON CONFLICT(id) DO UPDATE SET rank = excluded.rank WHERE games.rank IS NOT excluded.rank`,
+    ).bind(JSON.stringify(sellers)).run();
+  } else {
+    const spyPage = page - TOP_SELLER_PAGES;
+    const firstRank = TOP_SELLER_PAGES * TOP_SELLERS_PAGE_SIZE + spyPage * CATALOGUE_PAGE_SIZE;
+    const games = (await fetchTopGames(spyPage))
+      .map((g, i) => ({ ...g, rank: firstRank + i }))
+      .filter(g => !g.isFree);
+    // One statement for the whole page keeps us inside D1's per-invocation query limit.
+    await db.prepare(
+      `INSERT INTO games (id, name, rank, positive, negative, median_minutes)
+       SELECT json_extract(value, '$.id'), json_extract(value, '$.name'), json_extract(value, '$.rank'),
+              json_extract(value, '$.positive'), json_extract(value, '$.negative'), json_extract(value, '$.medianMinutes')
+       FROM json_each(?1) WHERE true
+       ON CONFLICT(id) DO UPDATE SET rank = MIN(games.rank, excluded.rank), positive = excluded.positive,
+         negative = excluded.negative, median_minutes = excluded.median_minutes
+       WHERE games.positive IS NOT excluded.positive OR games.negative IS NOT excluded.negative
+         OR games.median_minutes IS NOT excluded.median_minutes OR games.rank > excluded.rank`,
+    ).bind(JSON.stringify(games)).run();
+  }
 
   const next = page + 1;
-  if (next < CATALOGUE_PAGES) {
-    await setState(db, "catalogue_page", String(next));
+  if (next < TOP_SELLER_PAGES + CATALOGUE_PAGES) {
+    await setState(db, "catalogue_source_page", String(next));
   } else {
-    await setState(db, "catalogue_page", "0");
-    await setState(db, "catalogue_cycle_at", now.toISOString());
+    await setState(db, "catalogue_source_page", "0");
+    await setState(db, "catalogue_round_at", now.toISOString());
   }
 }
 
@@ -164,12 +180,13 @@ async function syncDetails(db: D1Database, now: Date): Promise<void> {
         continue;
       }
       await sleep(STEAMSPY_GAP_MS);
-      const [tags, deck] = await Promise.all([fetchTags(id), fetchDeckCategory(id)]);
+      const [spy, deck] = await Promise.all([fetchSteamSpyDetails(id), fetchDeckCategory(id)]);
       updates.push(db.prepare(
         `UPDATE games SET name = ?, developer = ?, description = ?, released = ?, tags = ?, coop = ?, deck = ?,
+           positive = MAX(positive, ?), negative = MAX(negative, ?), median_minutes = MAX(median_minutes, ?),
            listed = 1, details_synced_at = ? WHERE id = ?`,
-      ).bind(details.name, details.developer, details.description, details.released, JSON.stringify(tags),
-        details.coop ? 1 : 0, deck, now.toISOString(), id));
+      ).bind(details.name, details.developer, details.description, details.released, JSON.stringify(spy.tags),
+        details.coop ? 1 : 0, deck, spy.positive, spy.negative, spy.medianMinutes, now.toISOString(), id));
     } catch (err) {
       console.error(`details for ${id} failed`, err);
       // Push a failing game back in the queue so it cannot block the others, and keep it hidden until it has details.
