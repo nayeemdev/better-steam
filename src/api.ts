@@ -1,6 +1,6 @@
 import { discountPercent, ratingScore, valueScore, verdictFor } from "./pricing.ts";
 import { CURRENCIES, DEFAULT_REGION, REGIONS, currencyForCountry, findRegion } from "./regions.ts";
-import { fetchOwned, fetchWishlist, resolveProfile } from "./steam.ts";
+import { fetchOwned, fetchWishlist, resolveProfile, searchStore } from "./steam.ts";
 
 const CACHE_SECONDS = 600;
 const LIST_TAGS = 6;
@@ -30,6 +30,7 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
 
   if (url.pathname === "/api/meta") return meta(request, env);
   if (url.pathname === "/api/profile") return profile(env, url);
+  if (url.pathname === "/api/search") return cached(request, ctx, () => search(url));
   if (url.pathname === "/api/games") return cached(request, ctx, () => listGames(env, url));
   const game = url.pathname.match(/^\/api\/games\/(\d+)$/);
   if (game) return cached(request, ctx, () => gameDetail(env, Number(game[1]), url));
@@ -144,4 +145,12 @@ async function profile(env: Env, url: URL): Promise<Response> {
     env.STEAM_API_KEY ? fetchOwned(who.steamId, env.STEAM_API_KEY).catch(() => null) : null,
   ]);
   return json({ ...who, wishlist, owned });
+}
+
+async function search(url: URL): Promise<Response> {
+  const term = url.searchParams.get("q")?.trim() ?? "";
+  if (term.length < 2) return json({ results: [] });
+  const region = findRegion(url.searchParams.get("region"));
+  const results = await searchStore(term, region.steamCountry).catch(() => []);
+  return json({ results }, 200, CACHE_SECONDS);
 }

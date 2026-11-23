@@ -11,14 +11,15 @@ Purchases always happen on Steam. This site only links to the store page.
 - **A cron trigger** runs every 10 minutes and refreshes:
   - prices for the next 2,250 game and region pairs, picking up where the last run stopped (every region about every three hours)
   - details for ten games (description, tags, co-op, Steam Deck status)
-  - one page of the catalogue (SteamSpy's top 5,000 games, five pages refreshed daily) and exchange rates once a day
+  - one page of the catalogue (Steam's top 500 sellers, then SteamSpy's top 5,000 most owned games, ten pages refreshed daily) and exchange rates once a day
 - **Verdicts** ("Lowest price yet", "Good price", "Wait for a sale") come from the prices we have tracked. Until a game has 30 days of history, a discount is shown as "On sale" rather than claiming a record low.
 
 ### Data sources
 
 | Data | Source |
 | --- | --- |
-| Catalogue, review counts, median playtime, tags | [SteamSpy](https://steamspy.com/api.php) |
+| Catalogue | Steam top sellers (top 500) and [SteamSpy](https://steamspy.com/api.php) most owned (top 5,000) |
+| Review counts, median playtime, tags | [SteamSpy](https://steamspy.com/api.php) |
 | Descriptions, co-op, regional prices | Steam store `appdetails` |
 | Steam Deck compatibility | Steam store Deck report |
 | Exchange rates | [ExchangeRate-API open access](https://www.exchangerate-api.com/docs/free) |
@@ -31,6 +32,7 @@ Purchases always happen on Steam. This site only links to the store page.
 | `GET /api/meta` | Store regions, currencies with rates, and a default second currency from the visitor's country |
 | `GET /api/games?region=US` | Every listed game with its price and verdict in that region |
 | `GET /api/games/:id?region=US` | One game's description, tags and tracked price changes |
+| `GET /api/search?q=<text>&region=US` | Steam store search, used to show games the catalogue does not track yet |
 | `GET /api/profile?id=<link or ID>` | A Steam profile's public wishlist, and owned games when a Steam Web API key is set |
 
 ## Local development

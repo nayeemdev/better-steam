@@ -114,13 +114,37 @@ function passes(g, moods) {
   if (state.deckOnly && g.deck !== DECK_VERIFIED) return false;
   if (state.wishOnly && state.profile && !state.profile.wishlist.has(g.id)) return false;
   if (state.hideOwned && isOwned(g)) return false;
-  const q = state.query.trim().toLowerCase();
-  if (q && !(g.name.toLowerCase().includes(q) || (g.developer ?? "").toLowerCase().includes(q))) return false;
+  if (state.query.trim() && !searchScore(g)) return false;
   return moods.every(m => m.test(g));
 }
 
 const isOwned = g => Boolean(state.profile?.owned?.has(g.id));
 const isWished = g => Boolean(state.profile?.wishlist.has(g.id));
+
+const ROMAN = { ii: "2", iii: "3", iv: "4", v: "5", vi: "6", vii: "7", viii: "8", ix: "9" };
+const searchWords = text => text.toLowerCase().replace(/[®™©]/g, "").split(/[^a-z0-9]+/).filter(Boolean);
+
+// Lets people type short names like "gta5", "cod mw4" or "fh6" as well as full titles.
+function searchKey(g) {
+  if (g.searchKey) return g.searchKey;
+  const words = searchWords(g.name).map(w => ROMAN[w] ?? w);
+  g.searchKey = {
+    text: ` ${words.join(" ")} ${searchWords(g.developer ?? "").join(" ")}`,
+    compact: words.join(""),
+    acronym: words.map(w => (/^\d+$/.test(w) ? w : w[0])).join(""),
+  };
+  return g.searchKey;
+}
+
+function searchScore(g) {
+  const tokens = searchWords(state.query).map(w => ROMAN[w] ?? w);
+  if (!tokens.length) return 1;
+  const key = searchKey(g);
+  const joined = tokens.join("");
+  if (key.acronym.startsWith(joined) || key.compact.startsWith(joined)) return 3;
+  if (key.text.includes(` ${tokens.join(" ")}`)) return 2;
+  return tokens.every(t => key.text.includes(` ${t}`) || key.acronym.includes(t) || key.compact.includes(t)) ? 1 : 0;
+}
 
 function writeUrl() {
   const next = new URLSearchParams();
@@ -249,7 +273,8 @@ function cardHtml(g) {
 
 function render() {
   const active = MOODS.filter(m => state.moods.has(m.id));
-  const sort = SORTS.find(s => s.id === state.sort).fn;
+  const chosen = SORTS.find(s => s.id === state.sort).fn;
+  const sort = state.query.trim() ? (a, b) => searchScore(b) - searchScore(a) || b.reviews - a.reviews : chosen;
   const list = state.games.filter(g => passes(g, active)).sort(sort);
 
   $("watchBtn").setAttribute("aria-pressed", state.watchOnly);
@@ -280,7 +305,7 @@ function render() {
     const last = active[active.length - 1];
     $("grid").innerHTML = state.watchOnly
       ? `<div class="empty"><b>Your watchlist is empty</b>Open a game and choose Watch price.</div>`
-      : `<div class="empty"><b>Nothing matches all of that</b>${last ? `Try without <button class="linkish" data-drop="${last.id}">${esc(moodLabel(last).toLowerCase())}</button>.` : "Try a different search."}</div>`;
+      : `<div class="empty"><b>Nothing matches all of that</b>${last ? `Try without <button class="linkish" data-drop="${last.id}">${esc(moodLabel(last).toLowerCase())}</button>.` : state.query.trim() ? "We may not track this game yet. Any matches from the Steam store show below." : "Try a different search."}</div>`;
   } else {
     $("grid").innerHTML = list.slice(0, state.shown).map(cardHtml).join("");
     markLoadedImages($("grid"));
@@ -541,12 +566,56 @@ async function loadGames() {
   fillWatchBaselines();
 }
 
+const NOT_A_GAME = /\b(dlc|soundtrack|ost|demo|season pass|toolkit|artbook|upgrade)\b/i;
+const STEAM_RESULTS_BELOW = 3;
+let searchTimer;
+let searchSeq = 0;
+
+function scheduleSteamSearch() {
+  clearTimeout(searchTimer);
+  const q = state.query.trim();
+  if (q.length < 2) {
+    searchSeq++;
+    $("steamResults").hidden = true;
+    $("steamResults").innerHTML = "";
+    return;
+  }
+  searchTimer = setTimeout(async () => {
+    const seq = ++searchSeq;
+    try {
+      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&region=${state.region}`);
+      const { results } = await res.json();
+      if (seq === searchSeq) renderSteamResults(results.filter(r => !byId(r.id) && !NOT_A_GAME.test(r.name)));
+    } catch {
+      $("steamResults").hidden = true;
+    }
+  }, 350);
+}
+
+function renderSteamResults(results) {
+  const el = $("steamResults");
+  const tracked = state.games.filter(g => searchScore(g)).length;
+  el.hidden = !results.length || tracked >= STEAM_RESULTS_BELOW;
+  if (el.hidden) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = `<p class="label">Also on Steam, not tracked here yet</p>
+    <ul>${results.slice(0, 6).map(r => `<li><a class="steam-hit" href="https://store.steampowered.com/app/${r.id}/" target="_blank" rel="noopener">
+      <img src="${esc(r.image)}" alt="" loading="lazy" width="120" height="45">
+      <span class="steam-hit-name">${esc(r.name)}</span>
+      <span class="num">${r.price ? money(r.price.current, r.price.currency) : "Free or not for sale"}</span>
+      ${icon("ext")}
+    </a></li>`).join("")}</ul>`;
+}
+
 async function changeRegion(region) {
   state.region = region;
   store.set("bs-region", region);
   try {
     await loadGames();
     render();
+    scheduleSteamSearch();
   } catch {
     $("grid").innerHTML = `<div class="status"><b>Could not load games</b>Check your connection and try again.</div>`;
   }
@@ -569,7 +638,7 @@ document.addEventListener("click", e => {
     toast(`Hidden ${byId(id).name}`, () => { state.hidden.delete(id); saveHidden(); render(); });
   }
   else if (t.id === "unhide") { state.hidden.clear(); saveHidden(); render(); }
-  else if (t.id === "clearFilters") { state.moods.clear(); state.query = ""; $("q").value = ""; state.deckOnly = false; state.wishOnly = false; resetPaging(); render(); }
+  else if (t.id === "clearFilters") { state.moods.clear(); state.query = ""; $("q").value = ""; scheduleSteamSearch(); state.deckOnly = false; state.wishOnly = false; resetPaging(); render(); }
   else if (t.id === "closeBtn" || t.id === "scrim") closePreview();
   else if (t.id === "watchBtn") { state.watchOnly = !state.watchOnly; resetPaging(); render(); }
   else if (t.id === "deckOnly") { state.deckOnly = !state.deckOnly; resetPaging(); render(); }
@@ -625,7 +694,7 @@ document.addEventListener("keydown", e => {
   if (e.key === "/" && !["INPUT", "SELECT"].includes(document.activeElement.tagName)) { e.preventDefault(); $("q").focus(); }
 });
 
-$("q").addEventListener("input", e => { state.query = e.target.value; state.watchOnly = false; resetPaging(); render(); });
+$("q").addEventListener("input", e => { state.query = e.target.value; state.watchOnly = false; resetPaging(); render(); scheduleSteamSearch(); });
 document.querySelectorAll(".currency-select").forEach(s => s.addEventListener("change", e => {
   state.currency = e.target.value;
   store.set("bs-currency", state.currency);
@@ -655,6 +724,7 @@ async function start() {
     if (steamId) fetchProfile(steamId).then(p => { setProfile(p); if (state.games.length) render(); }).catch(() => {});
     await loadGames();
     render();
+    scheduleSteamSearch();
     if (state.selected && overlayPreview() && byId(state.selected)) select(state.selected);
   } catch {
     $("grid").innerHTML = `<div class="status"><b>Could not load games</b>Check your connection and try again.</div>`;
