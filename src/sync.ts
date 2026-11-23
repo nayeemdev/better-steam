@@ -19,13 +19,16 @@ type Task = (db: D1Database, now: Date) => Promise<void>;
 
 export async function runSync(env: Env, now = new Date()): Promise<void> {
   const tasks: Task[] = [syncRates, syncCatalogue, syncPrices, syncImagePaths, syncDetails];
+  const failed: string[] = [];
   for (const task of tasks) {
     try {
       await task(env.DB, now);
     } catch (err) {
+      failed.push(task.name);
       console.error(`${task.name} failed`, err);
     }
   }
+  await setState(env.DB, "last_run", JSON.stringify({ at: now.toISOString(), failed })).catch(() => {});
 }
 
 async function getState(db: D1Database, key: string): Promise<string | null> {

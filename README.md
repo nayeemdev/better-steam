@@ -31,6 +31,7 @@ Purchases always happen on Steam. This site only links to the store page.
 
 | Route | Returns |
 | --- | --- |
+| `GET /api/status` | Sync progress: last run and any failed steps, catalogue, details and image coverage, prices per region |
 | `GET /api/meta` | Store regions, currencies with rates, and a default second currency from the visitor's country |
 | `GET /api/games?region=US` | Every listed game with its price and verdict in that region |
 | `GET /api/games/:id?region=US` | One game's description, tags and tracked price changes |

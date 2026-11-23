@@ -31,6 +31,7 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   const url = new URL(request.url);
 
   if (url.pathname === "/api/meta") return meta(request, env);
+  if (url.pathname === "/api/status") return status(env);
   if (url.pathname === "/api/profile") return profile(env, url);
   if (url.pathname === "/api/search") return cached(request, ctx, () => search(url));
   if (url.pathname === "/api/games") return cached(request, ctx, () => listGames(env, url));
@@ -166,4 +167,43 @@ function imagePaths(g: GameRow): { capsule?: string; header?: string } {
   if (g.capsule_path !== null && g.capsule_path !== DEFAULT_CAPSULE) paths.capsule = g.capsule_path;
   if (g.header_path !== null && g.header_path !== DEFAULT_HEADER) paths.header = g.header_path;
   return paths;
+}
+
+async function status(env: Env): Promise<Response> {
+  const [counts, regions, state] = await env.DB.batch([
+    env.DB.prepare(
+      `SELECT count(*) AS games, sum(listed) AS listed,
+              sum(listed = 1 AND details_synced_at IS NOT NULL) AS with_details,
+              sum(listed = 1 AND capsule_path IS NOT NULL) AS with_images,
+              (SELECT count(*) FROM price_changes) AS price_changes,
+              (SELECT max(updated_at) FROM rates) AS rates_at
+       FROM games`,
+    ),
+    env.DB.prepare("SELECT region, count(*) AS games, max(updated_at) AS last_change FROM prices GROUP BY region"),
+    env.DB.prepare("SELECT key, value FROM sync_state"),
+  ]);
+  const c = counts.results[0] as Record<string, number | string | null>;
+  const s = Object.fromEntries((state.results as { key: string; value: string }[]).map(r => [r.key, r.value]));
+  const byRegion = new Map((regions.results as { region: string; games: number; last_change: string }[]).map(r => [r.region, r]));
+  return json({
+    lastRun: s.last_run ? JSON.parse(s.last_run) : null,
+    catalogue: {
+      games: c.games,
+      listed: c.listed ?? 0,
+      withDetails: c.with_details ?? 0,
+      withImages: c.with_images ?? 0,
+      nextSourcePage: Number(s.catalogue_source_page ?? 0),
+      lastFullRefresh: s.catalogue_round_at ?? null,
+    },
+    prices: {
+      cursor: s.prices_cursor ? JSON.parse(s.prices_cursor) : null,
+      changesRecorded: c.price_changes,
+      regions: REGIONS.map(r => ({
+        region: r.code,
+        games: byRegion.get(r.code)?.games ?? 0,
+        lastChange: byRegion.get(r.code)?.last_change ?? null,
+      })),
+    },
+    ratesUpdatedAt: c.rates_at,
+  });
 }
