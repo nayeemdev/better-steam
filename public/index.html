@@ -10,6 +10,10 @@
   <meta property="og:title" content="Better Steam">
   <meta property="og:description" content="Find Steam games worth buying today. Filter by mood, see real regional prices and whether a deal is actually good.">
   <meta name="twitter:card" content="summary">
+  <meta name="theme-color" content="#7c3aed">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <script>
     try { if (localStorage.getItem("bs-theme") === "dark") document.documentElement.dataset.theme = "dark"; } catch {}
   </script>
@@ -97,6 +101,7 @@
         <div>Deal verdicts come from prices we have tracked since we started watching each game. Game data from Steam and SteamSpy, exchange rates from ExchangeRate-API. Not affiliated with Valve.</div>
       </div>
       <div class="controls">
+        <button class="btn" id="installBtn" hidden>Install app</button>
         <label class="pick">Store region<select class="region-select"></select></label>
         <label class="pick">Also show<select class="currency-select"></select></label>
       </div>

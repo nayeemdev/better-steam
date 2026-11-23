@@ -15,6 +15,7 @@ Purchases always happen on Steam. This site only links to the store page.
   - one page of the catalogue (Steam's top 500 sellers, then SteamSpy's top 5,000 most owned games, ten pages refreshed daily) and exchange rates once a day
 - **Shared links** like `/?game=4435490` get the game's title, US price, verdict, review score and header image in their link preview tags, added by the Worker.
 - **Free games** are listed in every region without price lookups or price rows. They rank below paid deals in "Best value".
+- **Installable**: the site has a web app manifest, icons and a network-first service worker, so it can be installed and opens offline with the last loaded games.
 - **Verdicts** ("Lowest price yet", "Good price", "Wait for a sale") come from the prices we have tracked. Until a game has 30 days of history, a discount is shown as "On sale" rather than claiming a record low.
 
 ### Data sources
@@ -96,6 +97,10 @@ Each push to `main` then applies new migrations and deploys. To deploy by hand, 
 ### Abuse protection
 
 `/api/search` and `/api/profile` call Steam on every uncached request, so each visitor IP gets 30 of them per minute through the Workers rate limiting binding in `wrangler.jsonc`. Requests over the limit get a 429.
+
+### Visitor analytics
+
+Cloudflare Web Analytics counts visits without cookies. In the Cloudflare dashboard, go to **Analytics & Logs → Web Analytics → Add a site**, pick the `steam.nayeemdev.com` hostname and choose **Enable** for automatic setup. Cloudflare injects its beacon at the edge, so no code change is needed.
 
 ### Free plan limits
 
