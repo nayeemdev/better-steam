@@ -1,28 +1,94 @@
 # Better Steam
 
-A calmer way to shop on Steam. Pick a mood, see real regional prices, and get a plain answer on whether today is a good day to buy.
+**A calmer, clearer way to find Steam games worth buying.**
 
-Purchases always happen on Steam. This site only links to the store page.
+Pick a mood, see the real Steam price in your store region, and get a plain answer on whether today is a good day to buy.
+
+**Live site: [steam.nayeemdev.com](https://steam.nayeemdev.com)**
+
+[![CI](https://github.com/nayeemdev/better-steam/actions/workflows/ci.yml/badge.svg)](https://github.com/nayeemdev/better-steam/actions/workflows/ci.yml)
+
+![Better Steam storefront in light mode](docs/screenshots/storefront-light.webp)
+
+Purchases always happen on Steam. Better Steam only links to each game's store page.
+
+## Why
+
+The Steam store makes it hard to find anything and harder to tell a good deal from a constant one. Filters are scattered, discounts do not say whether a price is actually low, and every page competes for attention. Better Steam keeps one screen, a handful of moods, and a single verdict per game.
+
+## Features
+
+**Finding games**
+
+- **Mood tiles**: On sale now, Under $15, Play with friends, Short and sweet, Something cosy, One more run, Strategy and puzzles, A great story. Each shows how many games match, and they combine.
+- **All games, Paid and Free to play tabs**, plus a Steam Deck Verified switch and five sort orders.
+- **Search that understands short names**: `gta5`, `cod mw4`, `fh6` and `rdr2` find their games, with Roman numerals read as numbers. Games not tracked yet come from Steam's own search with a store link.
+- **Similar games** in each preview, matched on shared tags and weighted toward good reviews and current discounts.
+- **Steam profile** (no sign in): paste a profile link to filter by your public wishlist and hide games you own.
+
+**Judging the price**
+
+- **One verdict per game**: Lowest price yet, Good price, On sale, Wait for a sale, Never discounted, Full price or Free to play, from the prices we have tracked.
+- **Real regional prices** for 10 Steam store regions (US by default), with a second currency set from your location and hidden when it matches.
+- **Price in every region** for each game, converted to your currency with the cheapest marked.
+- **Price history chart**, price drop alerts for watched games, and a banner when a big Steam sale looks to be on.
+
+**Everyday use**
+
+- Light and dark themes, phone layout with a bottom sheet preview, arrow key browsing and `/` to search.
+- Filters, sort, tab and the open game live in the URL, so any view can be shared, and shared game links get a rich preview card.
+- Installable as an app and usable offline with the last loaded games.
+
+<p>
+  <img src="docs/screenshots/storefront-dark.webp" alt="Dark mode with the On sale now filter" width="68%">
+  <img src="docs/screenshots/phone.webp" alt="Phone layout" width="28%">
+</p>
+
+<img src="docs/screenshots/regional-prices.webp" alt="A game's price in every Steam store region" width="320" align="right">
 
 ## How it works
 
-- **Cloudflare Worker** serves the site from `public/` and a small JSON API from `src/`.
-- **D1** stores games, current prices per store region, price changes and exchange rates.
-- **A cron trigger** runs every 10 minutes and refreshes:
-  - prices for the next 2,250 game and region pairs, picking up where the last run stopped (every region about every three hours)
-  - details for ten games (description, tags, co-op, Steam Deck status)
-  - image paths for 100 games, since newer Steam apps keep their art under hashed folders
-  - one page of the catalogue (Steam's top 500 sellers, then SteamSpy's top 5,000 most owned games, ten pages refreshed daily) and exchange rates once a day
-- **Shared links** like `/?game=4435490` get the game's title, US price, verdict, review score and header image in their link preview tags, added by the Worker.
-- **Free games** are listed in every region without price lookups or price rows. They rank below paid deals in "Best value".
-- **Installable**: the site has a web app manifest, icons and a network-first service worker, so it can be installed and opens offline with the last loaded games.
-- **Verdicts** ("Lowest price yet", "Good price", "Wait for a sale") come from the prices we have tracked. Until a game has 30 days of history, a discount is shown as "On sale" rather than claiming a record low.
+The whole app is one Cloudflare Worker with a D1 database, running on the free plan.
+
+```mermaid
+flowchart LR
+  Visitor -->|page, fonts, icons| Assets[Static assets]
+  Visitor -->|/api/*| Worker
+  Worker <--> D1[(D1)]
+  Cron[Cron every 10 min] --> Sync
+  Sync --> D1
+  Sync --> Steam[Steam store and Web API]
+  Sync --> SteamSpy
+  Sync --> Rates[ExchangeRate-API]
+```
+
+- **Sync**: a cron trigger runs every 10 minutes and, within the free plan's 50 outbound requests per run, refreshes:
+  - prices for the next 2,250 game and region pairs, continuing where the last run stopped (each region about every three hours)
+  - details for 10 games (description, tags, co-op, Steam Deck status) and image paths for 100 games
+  - one page of the catalogue (Steam's top 500 sellers, then SteamSpy's top 5,000 most owned games) and exchange rates once a day
+- **Writes stay small**: prices are only written when they change, which keeps D1 well under its 100,000 daily row writes.
+- **Caching**: API responses are cached at Cloudflare's edge for 30 minutes and in browsers for 5. Game details are cached in the page.
+- **Honest verdicts**: until a game has 30 days of tracked history, a discount is shown as "On sale" rather than claiming a record low.
+
+<br clear="right">
+
+### Tech stack
+
+| Part | Choice |
+| --- | --- |
+| Hosting | Cloudflare Workers with static assets, cron triggers and the rate limiting binding |
+| Database | Cloudflare D1 (SQLite) |
+| Server | TypeScript, no framework |
+| Frontend | Plain HTML, CSS and JavaScript modules, no build step |
+| Tests | Node's built-in test runner |
+| CI | GitHub Actions (tests and type check) |
+| Deploys | Cloudflare Workers Builds from `main` |
 
 ### Data sources
 
 | Data | Source |
 | --- | --- |
-| Catalogue | Steam top sellers (top 500) and [SteamSpy](https://steamspy.com/api.php) most owned (top 5,000) |
+| Catalogue | Steam top sellers and [SteamSpy](https://steamspy.com/api.php) most owned |
 | Review counts, median playtime, tags | [SteamSpy](https://steamspy.com/api.php) |
 | Descriptions, co-op, regional prices | Steam store `appdetails` |
 | Steam Deck compatibility | Steam store Deck report |
@@ -34,14 +100,32 @@ Purchases always happen on Steam. This site only links to the store page.
 
 | Route | Returns |
 | --- | --- |
-| `GET /api/status` | Sync progress: last run and any failed steps, catalogue, details and image coverage, prices per region |
-| `GET /api/meta` | Store regions, currencies with rates, and a default second currency from the visitor's country |
 | `GET /api/games?region=US` | Every listed game with its price and verdict in that region |
-| `GET /api/games/:id?region=US` | One game's description, tags and tracked price changes |
-| `GET /api/search?q=<text>&region=US` | Steam store search, used to show games the catalogue does not track yet |
+| `GET /api/games/:id?region=US` | One game's description, tags, price history and price in every region |
+| `GET /api/meta` | Store regions, currencies with rates, and a default second currency from the visitor's country |
+| `GET /api/search?q=<text>&region=US` | Steam store search, for games the catalogue does not track yet |
 | `GET /api/profile?id=<link or ID>` | A Steam profile's public wishlist, and owned games when a Steam Web API key is set |
+| `GET /api/status` | Sync progress: last run and any failed steps, catalogue, details and image coverage, prices per region |
 
-## Local development
+Search and profile lookups call Steam directly, so each visitor IP gets 30 of them per minute.
+
+## Project structure
+
+```
+src/
+  index.ts      Worker entry: API routes, home page link previews, cron
+  api.ts        API handlers and caching
+  sync.ts       Scheduled sync of catalogue, prices, details, images and rates
+  steam.ts      Steam, SteamSpy and exchange rate clients
+  pricing.ts    Deal verdicts and scoring
+  regions.ts    Store regions and currencies
+  share.ts      Link preview tags
+public/         The site: index.html, app.js, styles.css, fonts, icons, service worker
+migrations/     D1 schema
+test/           Unit tests
+```
+
+## Run it yourself
 
 Requires Node 22 or later.
 
@@ -57,7 +141,7 @@ npm run db:migrate:local
 npx wrangler dev --test-scheduled
 ```
 
-The first sync does not run on its own locally. Trigger it, and repeat to fill in more games:
+The sync does not run on its own locally. Trigger it, and repeat to fill in more games:
 
 ```bash
 curl "http://localhost:8787/__scheduled?cron=*/10+*+*+*+*"
@@ -73,63 +157,35 @@ npm test
 npm run typecheck
 ```
 
-## Deploy to Cloudflare
+### Deploy your own
 
 1. Log in: `npx wrangler login`
 2. Create the database: `npx wrangler d1 create better-steam`
-3. Copy the printed `database_id` into `wrangler.jsonc` (already set for the main deployment).
+3. Put the printed `database_id` in `wrangler.jsonc`.
 4. Apply the schema: `npm run db:migrate`
 5. Deploy: `npm run deploy`
 
-### Automatic deploys
+For automatic deploys, connect the repository in the Cloudflare dashboard under **Workers & Pages → Create → Import a repository**, name the project `better-steam`, leave the build command empty and set the deploy command to `npm run db:migrate && npx wrangler deploy`. If the migration step fails, give the build's API token **D1 Edit** permission.
 
-Deploys run on Cloudflare Workers Builds, connected to this repository:
+The first sync starts within ten minutes. Every game with a price is listed straight away, prices for all regions arrive within about three hours, and descriptions, tags and Steam Deck status fill in over about three days.
 
-1. In the Cloudflare dashboard, go to **Workers & Pages → Create → Import a repository** and pick this repository.
-2. Name the project `better-steam` to match `wrangler.jsonc`.
-3. Leave the build command empty and set the deploy command to `npm run db:migrate && npx wrangler deploy`.
-4. Set the production branch to `main`.
+### Optional settings
 
-Each push to `main` then applies new migrations and deploys. To deploy by hand, start a new build from the project's **Deployments** tab. If the migration step fails, give the build's API token **D1 Edit** permission.
-
-`.github/workflows/ci.yml` only runs the tests and type check, on every push and pull request.
-
-### Abuse protection
-
-`/api/search` and `/api/profile` call Steam on every uncached request, so each visitor IP gets 30 of them per minute through the Workers rate limiting binding in `wrangler.jsonc`. Requests over the limit get a 429.
-
-### Visitor analytics
-
-Cloudflare Web Analytics counts visits without cookies. In the Cloudflare dashboard, go to **Analytics & Logs → Web Analytics → Add a site**, pick the `steam.nayeemdev.com` hostname and choose **Enable** for automatic setup. Cloudflare injects its beacon at the edge, so no code change is needed.
-
-### Free plan limits
-
-D1's free plan allows 100,000 rows written per day. Filling prices for the first time costs about 43,000 writes (about 4,300 games in 10 regions), spread over roughly three hours. After that, writes only happen when a price changes, plus a few thousand a day for catalogue and details updates. If a big Steam sale ever pushes past the limit, writes pause until 00:00 UTC and the site keeps serving the data it has.
-
-### Optional: owned games
-
-Wishlists work without any key. To also hide games people own, get a key at <https://steamcommunity.com/dev/apikey> and add it as a secret:
-
-```bash
-npx wrangler secret put STEAM_API_KEY
-```
-
-For local development, put `STEAM_API_KEY=...` in a `.dev.vars` file instead.
-
-The cron starts filling data within ten minutes. The catalogue reaches about 4,300 paid games within the first hour, and every game with a price is listed straight away. Prices for every region are there within about three hours, and descriptions, tags and Steam Deck status fill in over about three days on the free plan.
+- **Hide owned games**: wishlists work without a key. For owned games, get a key at <https://steamcommunity.com/dev/apikey> and run `npx wrangler secret put STEAM_API_KEY` (locally, put `STEAM_API_KEY=...` in `.dev.vars`).
+- **Visitor analytics**: in the Cloudflare dashboard, open **Analytics & Logs → Web Analytics → Add a site**, pick your hostname and choose **Enable**. No code change is needed.
+- **Browser caching**: set **Caching → Configuration → Browser Cache TTL** to **Respect Existing Headers** so the API's own cache times apply.
 
 ## Roadmap
 
-| Phase | Scope | Status |
-| --- | --- | --- |
-| 1 | Worker, D1 schema, pricing and verdict logic | Done |
-| 2 | Sync of catalogue, details, regional prices and exchange rates | Done |
-| 3 | Games, history and meta API | Done |
-| 4 | Storefront: moods, featured deal, preview, regions, second currency, theme toggle, watchlist, shareable filters | Done |
-| 5 | CI on GitHub, automatic deploys through Cloudflare Workers Builds, and letting price history build up | Done (connect the repository in Cloudflare) |
-| 6 | Backfill historical lows from IsThereAnyDeal so verdicts are accurate from day one | On hold: their API terms forbid apps that compete with IsThereAnyDeal, so this needs their written permission first |
-| 7 | Connect a Steam profile to filter by wishlist and hide owned games | Done (owned games need a Steam Web API key) |
-| 8 | Price-drop alerts for watched games, shown at the top of the site | Done |
-| 9 | Send those alerts by email | Planned (needs an email provider and a sending domain) |
+- [x] Regional prices, verdicts and price history
+- [x] Mood filters, tabs, short name search and similar games
+- [x] Steam profile wishlist and owned games
+- [x] Price drop alerts in the app, sale banner, link previews, installable app
+- [ ] Email price alerts
+- [ ] Accurate historical lows from day one (IsThereAnyDeal's API terms need their written permission for a site like this)
 
-Not affiliated with Valve.
+## Credits
+
+Game data comes from Steam and [SteamSpy](https://steamspy.com), and exchange rates from [ExchangeRate-API](https://www.exchangerate-api.com). The Chakra Petch and Russo One fonts are used under the SIL Open Font License, included in `public/fonts`.
+
+Better Steam is not affiliated with Valve. Steam and the Steam logo are trademarks of Valve Corporation. Game names and artwork belong to their owners.
