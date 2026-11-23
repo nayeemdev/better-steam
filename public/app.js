@@ -1,7 +1,13 @@
 const PAGE_SIZE = 48;
 const CHEAP_USD = 15;
 const DEFAULT_SORT = "value";
-const imageUrl = (id, kind) => `https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${id}/${kind}.jpg`;
+const IMAGE_BASE = "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps";
+const DEFAULT_IMAGE = { capsule: "library_600x900.jpg", header: "header.jpg" };
+
+function imageUrl(g, kind) {
+  const path = g[kind] || (kind === "capsule" && g.capsule === "" ? g.header || DEFAULT_IMAGE.header : DEFAULT_IMAGE[kind]);
+  return `${IMAGE_BASE}/${g.id}/${path}`;
+}
 
 const hasTag = (game, tags) => tags.some(tag => game.tags.includes(tag));
 
@@ -233,7 +239,7 @@ function renderFeatured() {
   const eyebrow = { buy: "Lowest price yet", good: "Good price today", sale: `${pick.discount}% off right now` }[pick.verdict] ?? "Top rated";
   const alt = converted(pick.current);
   el.hidden = false;
-  el.innerHTML = `<img class="fade" src="${imageUrl(pick.id, "header")}" alt="">
+  el.innerHTML = `<img class="fade" src="${imageUrl(pick, "header")}" alt="">
     <span class="eyebrow">${icon("star")} ${esc(eyebrow)}</span>
     <h2>${esc(pick.name)}</h2>
     <div class="row">
@@ -252,7 +258,7 @@ function cardHtml(g) {
     <button class="open" data-open="${g.id}" aria-label="${esc(g.name)}, ${esc(v.word)}, ${money(g.current)}">
       <div class="art">
         <span class="art-fallback" aria-hidden="true">${esc(g.name)}</span>
-        <img class="fade" src="${imageUrl(g.id, "library_600x900")}" alt="" loading="lazy" crossorigin="anonymous" data-tint-for="${g.id}" width="600" height="900">
+        <img class="fade" src="${imageUrl(g, "capsule")}" data-header="${imageUrl(g, "header")}" alt="" loading="lazy" crossorigin="anonymous" data-tint-for="${g.id}" width="600" height="900">
         <span class="badge v-${g.verdict}">${g.verdict === "buy" ? icon("tag") : ""}${esc(v.word)}</span>
         ${g.discount ? `<span class="off-flag num">-${g.discount}%</span>` : ""}
         ${isOwned(g) ? '<span class="owned">Owned</span>' : ""}
@@ -379,7 +385,7 @@ function renderPreview() {
   el.style.setProperty("--tint-ink", tint.startsWith("#") ? inkOn(tint) : "#fff");
   el.innerHTML = `
     <div class="p-hero">
-      <div class="shot"><img class="fade" src="${imageUrl(g.id, "header")}" alt=""></div>
+      <div class="shot"><img class="fade" src="${imageUrl(g, "header")}" alt=""></div>
       <button class="close" id="closeBtn" aria-label="Close preview">${icon("x")}</button>
     </div>
     <div class="p-body">
@@ -685,7 +691,7 @@ document.addEventListener("load", e => {
 document.addEventListener("error", e => {
   const img = e.target;
   if (!(img instanceof HTMLImageElement)) return;
-  if (img.src.includes("library_600x900")) img.src = img.src.replace("library_600x900", "header");
+  if (img.dataset.header && img.src !== img.dataset.header) img.src = img.dataset.header;
   else img.classList.add("is-missing");
 }, true);
 

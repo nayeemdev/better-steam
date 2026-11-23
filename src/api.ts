@@ -4,6 +4,8 @@ import { fetchOwned, fetchWishlist, resolveProfile, searchStore } from "./steam.
 
 const CACHE_SECONDS = 600;
 const LIST_TAGS = 6;
+const DEFAULT_CAPSULE = "library_600x900.jpg";
+const DEFAULT_HEADER = "header.jpg";
 
 function json(body: unknown, status = 200, cacheSeconds = 0): Response {
   return new Response(JSON.stringify(body), {
@@ -68,12 +70,14 @@ interface GameRow {
   current: number;
   lowest: number;
   tracked_since: string;
+  capsule_path: string | null;
+  header_path: string | null;
 }
 
 async function listGames(env: Env, url: URL): Promise<Response> {
   const region = findRegion(url.searchParams.get("region"));
   const { results } = await env.DB.prepare(
-    `SELECT g.id, g.name, g.developer, g.released, g.tags, g.coop, g.deck,
+    `SELECT g.id, g.name, g.developer, g.released, g.tags, g.coop, g.deck, g.capsule_path, g.header_path,
             g.positive, g.negative, g.median_minutes,
             p.currency, p.regular, p.current, p.lowest, p.tracked_since
      FROM games g JOIN prices p ON p.game_id = g.id AND p.region = ?
@@ -94,6 +98,7 @@ async function listGames(env: Env, url: URL): Promise<Response> {
       developer: g.developer,
       released: g.released,
       tags: (JSON.parse(g.tags) as string[]).slice(0, LIST_TAGS),
+      ...imagePaths(g),
       coop: g.coop === 1,
       deck: g.deck,
       reviews,
@@ -153,4 +158,12 @@ async function search(url: URL): Promise<Response> {
   const region = findRegion(url.searchParams.get("region"));
   const results = await searchStore(term, region.steamCountry).catch(() => []);
   return json({ results }, 200, CACHE_SECONDS);
+}
+
+// Only paths that differ from Steam's default file names are sent, to keep the list small.
+function imagePaths(g: GameRow): { capsule?: string; header?: string } {
+  const paths: { capsule?: string; header?: string } = {};
+  if (g.capsule_path !== null && g.capsule_path !== DEFAULT_CAPSULE) paths.capsule = g.capsule_path;
+  if (g.header_path !== null && g.header_path !== DEFAULT_HEADER) paths.header = g.header_path;
+  return paths;
 }

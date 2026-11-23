@@ -1,15 +1,16 @@
 import { CURRENCIES, REGIONS, type Region } from "./regions.ts";
-import { fetchAppDetails, fetchDeckCategory, fetchPrices, fetchSteamSpyDetails, fetchTopGames, fetchTopSellers, fetchUsdRates, TOP_SELLERS_PAGE_SIZE, type RegionalPrice } from "./steam.ts";
+import { fetchAppDetails, fetchDeckCategory, fetchImagePaths, fetchPrices, fetchSteamSpyDetails, fetchTopGames, fetchTopSellers, fetchUsdRates, TOP_SELLERS_PAGE_SIZE, type RegionalPrice } from "./steam.ts";
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
 const PRICE_BATCH = 150;
-// Keeps each run under the free plan's 50 outbound requests: 1 rates call, 1 catalogue page, 15 price chunks, 3 per game.
+// Keeps each run under the free plan's 50 outbound requests: 1 rates call, 1 catalogue page, 15 price chunks, 1 image lookup, 3 per game.
 const TOP_SELLER_PAGES = 5;
 const CATALOGUE_PAGES = 5;
 const CATALOGUE_PAGE_SIZE = 1000;
 const PRICE_REQUESTS_PER_RUN = 15;
 const DETAILS_PER_RUN = 10;
+const IMAGE_LOOKUPS_PER_RUN = 100;
 const DETAILS_MAX_AGE_MS = 7 * DAY_MS;
 const DETAILS_RETRY_MS = DAY_MS;
 const STEAMSPY_GAP_MS = 1100;
@@ -17,7 +18,7 @@ const STEAMSPY_GAP_MS = 1100;
 type Task = (db: D1Database, now: Date) => Promise<void>;
 
 export async function runSync(env: Env, now = new Date()): Promise<void> {
-  const tasks: Task[] = [syncRates, syncCatalogue, syncPrices, syncDetails];
+  const tasks: Task[] = [syncRates, syncCatalogue, syncPrices, syncImagePaths, syncDetails];
   for (const task of tasks) {
     try {
       await task(env.DB, now);
@@ -197,4 +198,15 @@ async function syncDetails(db: D1Database, now: Date): Promise<void> {
     }
   }
   if (updates.length) await db.batch(updates);
+}
+
+async function syncImagePaths(db: D1Database): Promise<void> {
+  const { results } = await db.prepare("SELECT id FROM games WHERE listed = 1 AND capsule_path IS NULL ORDER BY rank LIMIT ?")
+    .bind(IMAGE_LOOKUPS_PER_RUN).all<{ id: number }>();
+  if (!results.length) return;
+  const paths = await fetchImagePaths(results.map(r => r.id));
+  await db.prepare(
+    `UPDATE games SET capsule_path = json_extract(j.value, '$.capsule'), header_path = json_extract(j.value, '$.header')
+     FROM json_each(?) AS j WHERE games.id = json_extract(j.value, '$.id')`,
+  ).bind(JSON.stringify(paths)).run();
 }

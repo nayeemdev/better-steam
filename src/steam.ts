@@ -204,3 +204,22 @@ export async function fetchOwned(steamId: string, apiKey: string): Promise<numbe
   );
   return (data.response?.games ?? []).map(g => g.appid);
 }
+
+export interface ImagePaths {
+  id: number;
+  capsule: string;
+  header: string;
+}
+
+export async function fetchImagePaths(ids: number[]): Promise<ImagePaths[]> {
+  const input = {
+    ids: ids.map(appid => ({ appid })),
+    context: { language: "english", country_code: "US" },
+    data_request: { include_assets: true },
+  };
+  const data = await getJson<{ response?: { store_items?: { appid?: number; id?: number; assets?: { library_capsule?: string; header?: string } }[] } }>(
+    `https://api.steampowered.com/IStoreBrowseService/GetItems/v1/?input_json=${encodeURIComponent(JSON.stringify(input))}`,
+  );
+  const found = new Map((data.response?.store_items ?? []).map(item => [item.appid ?? item.id, item.assets]));
+  return ids.map(id => ({ id, capsule: found.get(id)?.library_capsule ?? "", header: found.get(id)?.header ?? "" }));
+}

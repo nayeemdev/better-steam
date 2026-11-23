@@ -11,6 +11,7 @@ Purchases always happen on Steam. This site only links to the store page.
 - **A cron trigger** runs every 10 minutes and refreshes:
   - prices for the next 2,250 game and region pairs, picking up where the last run stopped (every region about every three hours)
   - details for ten games (description, tags, co-op, Steam Deck status)
+  - image paths for 100 games, since newer Steam apps keep their art under hashed folders
   - one page of the catalogue (Steam's top 500 sellers, then SteamSpy's top 5,000 most owned games, ten pages refreshed daily) and exchange rates once a day
 - **Verdicts** ("Lowest price yet", "Good price", "Wait for a sale") come from the prices we have tracked. Until a game has 30 days of history, a discount is shown as "On sale" rather than claiming a record low.
 
@@ -22,6 +23,7 @@ Purchases always happen on Steam. This site only links to the store page.
 | Review counts, median playtime, tags | [SteamSpy](https://steamspy.com/api.php) |
 | Descriptions, co-op, regional prices | Steam store `appdetails` |
 | Steam Deck compatibility | Steam store Deck report |
+| Cover and header image paths | Steam `IStoreBrowseService/GetItems` |
 | Exchange rates | [ExchangeRate-API open access](https://www.exchangerate-api.com/docs/free) |
 | Wishlist and owned games | Steam community profile and Steam Web API |
 
