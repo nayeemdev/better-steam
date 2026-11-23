@@ -1,5 +1,9 @@
-const CACHE = "better-steam-v2";
-const SHELL = ["/", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg"];
+const CACHE = "better-steam-v3";
+const SHELL = [
+  "/", "/styles.css", "/app.js", "/manifest.webmanifest", "/icon.svg",
+  "/fonts/chakra-petch-400.woff2", "/fonts/chakra-petch-500.woff2", "/fonts/chakra-petch-600.woff2",
+  "/fonts/chakra-petch-700.woff2", "/fonts/russo-one-400.woff2",
+];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
