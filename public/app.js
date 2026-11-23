@@ -346,6 +346,25 @@ function chartSvg(history) {
   </svg>`;
 }
 
+function regionPricesHtml(prices) {
+  const target = currencyInfo(state.currency) ?? currencyInfo(regionCurrency());
+  const rows = prices.flatMap(p => {
+    const region = state.meta.regions.find(r => r.code === p.region);
+    const from = currencyInfo(p.currency);
+    if (!region) return [];
+    const compared = from && target ? Math.round(p.current / from.perUsd * target.perUsd) : null;
+    return [{ ...p, name: region.name, compared }];
+  }).sort((a, b) => (a.compared ?? Infinity) - (b.compared ?? Infinity));
+  if (!rows.length) return `<div id="regionPrices" class="note">No other regions have a price yet.</div>`;
+  const cheapest = rows[0].compared;
+  return `<ul class="region-prices" id="regionPrices">${rows.map(r => `<li${r.region === state.region ? ' class="is-current"' : ""}>
+      <span class="rp-name">${esc(r.name)}${r.region === state.region ? ' <span class="rp-tag">Your store</span>' : ""}${r.compared === cheapest && rows.length > 1 ? ' <span class="rp-tag rp-best">Cheapest</span>' : ""}</span>
+      <span class="num rp-local">${money(r.current, r.currency)}${r.current < r.regular ? ` <s>${money(r.regular, r.currency)}</s>` : ""}</span>
+      <span class="num rp-compared">${r.compared !== null && r.currency !== target.code ? `≈ ${money(r.compared, target.code)}` : ""}</span>
+    </li>`).join("")}</ul>
+    <p class="note">You can only buy in the store region of your Steam account. Conversions use today's exchange rates.</p>`;
+}
+
 async function loadDetail(g) {
   const target = $("chart");
   try {
@@ -358,6 +377,7 @@ async function loadDetail(g) {
       blurb.outerHTML = `<p class="blurb" id="blurb">${esc(history.description)}</p>`;
     } else blurb.remove();
     if (history.tags.length) $("tagChips").innerHTML = history.tags.slice(0, 8).map(t => `<span>${esc(t)}</span>`).join("");
+    $("regionPrices").outerHTML = regionPricesHtml(history.regions);
     const since = shortDate(history.trackedSince);
     target.innerHTML = history.changes.length < 2
       ? `<div class="note">Tracking since ${since}. The price has not changed since then, so there is no history to chart yet.</div>`
@@ -366,6 +386,7 @@ async function loadDetail(g) {
   } catch {
     if (!document.contains(target)) return;
     target.innerHTML = `<div class="note">Price history is not available right now.</div>`;
+    $("regionPrices")?.remove();
     $("blurb")?.remove();
   }
 }
@@ -404,6 +425,10 @@ function renderPreview() {
       <div class="chart">
         <p class="label">Price history</p>
         <div id="chart"><div class="skeleton skeleton-chart" aria-label="Loading price history"></div></div>
+      </div>
+      <div>
+        <p class="label">Price in each store region</p>
+        <div id="regionPrices" class="skeleton-lines" aria-label="Loading regional prices"><div class="skeleton"></div><div class="skeleton"></div></div>
       </div>
       <dl class="facts">
         <div>${icon("star")}<dt>Reviews</dt><dd class="num">${g.positivePct !== null ? `${g.positivePct}% of ${compact(g.reviews)}` : "No reviews yet"}</dd></div>
