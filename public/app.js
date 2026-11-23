@@ -1,6 +1,7 @@
 const PAGE_SIZE = 48;
 const CHEAP_USD = 15;
 const DEFAULT_SORT = "value";
+const DEFAULT_REGION = "US";
 const IMAGE_BASE = "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps";
 const DEFAULT_IMAGE = { capsule: "library_600x900.jpg", header: "header.jpg" };
 
@@ -703,11 +704,15 @@ function similarHtml(g) {
     </button>`).join("")}</div></div>`;
 }
 
-async function loadGames() {
-  $("grid").innerHTML = placeholderCards();
-  const res = await fetch(`/api/games?region=${state.region}`);
+async function fetchGames(region) {
+  const res = await fetch(`/api/games?region=${region}`);
   if (!res.ok) throw new Error(String(res.status));
-  state.games = (await res.json()).games;
+  return (await res.json()).games;
+}
+
+async function loadGames(request) {
+  $("grid").innerHTML = placeholderCards();
+  state.games = await (request ?? fetchGames(state.region));
   fillWatchBaselines();
   weighTags();
 }
@@ -889,6 +894,10 @@ async function start() {
   setTheme(store.get("bs-theme", "light"));
   $("grid").innerHTML = placeholderCards();
   $("q").value = state.query;
+  // The game list does not depend on the settings response, so both start at once.
+  const firstRegion = state.region ?? DEFAULT_REGION;
+  const gamesRequest = fetchGames(firstRegion);
+  gamesRequest.catch(() => {});
   try {
     const res = await fetch("/api/meta");
     if (!res.ok) throw new Error(String(res.status));
@@ -898,7 +907,7 @@ async function start() {
     renderStatic();
     const steamId = store.get("bs-steam-id", null);
     if (steamId) fetchProfile(steamId).then(p => { setProfile(p); if (state.games.length) render(); }).catch(() => {});
-    await loadGames();
+    await loadGames(state.region === firstRegion ? gamesRequest : undefined);
     render();
     scheduleSteamSearch();
     if (state.selected && overlayPreview() && byId(state.selected)) select(state.selected);
