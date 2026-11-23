@@ -40,10 +40,24 @@ The Steam store makes it hard to find anything and harder to tell a good deal fr
 - Filters, sort, tab and the open game live in the URL, so any view can be shared, and shared game links get a rich preview card.
 - Installable as an app and usable offline with the last loaded games.
 
-<p>
-  <img src="docs/screenshots/storefront-dark.webp" alt="Dark mode with the On sale now filter" width="68%">
-  <img src="docs/screenshots/phone.webp" alt="Phone layout" width="28%">
-</p>
+## Screenshots
+
+<table>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/storefront-dark.webp" alt="Dark mode with the On sale now filter and the game preview"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><sub>Dark mode, filtered to games on sale and sorted by biggest saving</sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/screenshots/phone.webp" alt="Phone layout" width="300"></td>
+    <td width="50%" align="center"><img src="docs/screenshots/regional-prices.webp" alt="A game's price in every Steam store region" width="300"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Phone layout</sub></td>
+    <td align="center"><sub>A game's price in all 10 store regions, cheapest first</sub></td>
+  </tr>
+</table>
 
 ## Design
 
@@ -56,8 +70,6 @@ Better Steam is built as the opposite of a busy storefront: one screen, a few cl
 - **Calm by default**: light theme first with a dark theme toggle, no hover glow, zoom or lift effects, nothing that autoplays, and placeholders while covers and details load.
 - **Accessible**: readable contrast in both themes, visible keyboard focus, arrow key navigation, touch targets of at least 44 px, and reduced motion respected.
 - **Made for phones too**: a compact header with prices in a dialog, two-column covers, and the preview as a bottom sheet.
-
-<img src="docs/screenshots/regional-prices.webp" alt="A game's price in every Steam store region" width="320" align="right">
 
 ## How it works
 
@@ -82,8 +94,6 @@ flowchart LR
 - **Writes stay small**: prices are only written when they change, which keeps D1 well under its 100,000 daily row writes.
 - **Caching**: API responses are cached at Cloudflare's edge for 30 minutes and in browsers for 5. Game details are cached in the page.
 - **Honest verdicts**: until a game has 30 days of tracked history, a discount is shown as "On sale" rather than claiming a record low.
-
-<br clear="right">
 
 ### Tech stack
 
