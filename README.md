@@ -7,6 +7,7 @@ Pick a mood, see the real Steam price in your store region, and get a plain answ
 **Live site: [steam.nayeemdev.com](https://steam.nayeemdev.com)**
 
 [![CI](https://github.com/nayeemdev/better-steam/actions/workflows/ci.yml/badge.svg)](https://github.com/nayeemdev/better-steam/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-7c3aed.svg)](LICENSE)
 
 ![Better Steam storefront in light mode](docs/screenshots/storefront-light.webp)
 
@@ -189,3 +190,7 @@ The first sync starts within ten minutes. Every game with a price is listed stra
 Game data comes from Steam and [SteamSpy](https://steamspy.com), and exchange rates from [ExchangeRate-API](https://www.exchangerate-api.com). The Chakra Petch and Russo One fonts are used under the SIL Open Font License, included in `public/fonts`.
 
 Better Steam is not affiliated with Valve. Steam and the Steam logo are trademarks of Valve Corporation. Game names and artwork belong to their owners.
+
+## License
+
+[MIT](LICENSE). The fonts in `public/fonts` keep their own SIL Open Font License.
