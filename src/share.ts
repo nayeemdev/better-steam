@@ -8,6 +8,7 @@ const VERDICT_LABEL: Record<Verdict, string> = {
   wait: "Wait for a sale",
   steady: "Never discounted",
   full: "Full price",
+  free: "Free to play",
 };
 
 const IMAGE_BASE = "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps";
@@ -18,6 +19,7 @@ export interface SharedGame {
   headerPath: string | null;
   positive: number;
   negative: number;
+  free: boolean;
   price: (TrackedPrice & { currency: string }) | null;
 }
 
@@ -36,6 +38,7 @@ function formatMoney(minor: number, code: string): string {
 
 export function shareMeta(game: SharedGame, now: Date): ShareMeta {
   const parts: string[] = [];
+  if (game.free && !game.price) parts.push("Free to play.");
   if (game.price) {
     const off = discountPercent(game.price);
     parts.push(`${formatMoney(game.price.current, game.price.currency)}${off ? `, ${off}% off` : ""}.`);

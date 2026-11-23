@@ -1,4 +1,4 @@
-export type Verdict = "buy" | "good" | "sale" | "wait" | "steady" | "full";
+export type Verdict = "buy" | "good" | "sale" | "wait" | "steady" | "full" | "free";
 
 export interface TrackedPrice {
   regular: number;
@@ -44,7 +44,8 @@ export function ratingScore(positive: number, negative: number): number {
   return (positive + PRIOR_SCORE * PRIOR_WEIGHT) / (total + PRIOR_WEIGHT);
 }
 
-const VERDICT_BONUS: Record<Verdict, number> = { buy: 0.06, good: 0.04, sale: 0.03, steady: 0.01, full: 0, wait: 0 };
+// Free games rank below paid deals so they do not crowd out discounts in "Best value".
+const VERDICT_BONUS: Record<Verdict, number> = { buy: 0.06, good: 0.04, sale: 0.03, steady: 0.01, full: 0, wait: 0, free: -0.05 };
 
 export function valueScore(rating: number, verdict: Verdict, discount: number): number {
   return rating + VERDICT_BONUS[verdict] + discount / 1000;

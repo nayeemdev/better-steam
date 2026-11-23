@@ -77,13 +77,13 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
     const spyPage = page - TOP_SELLER_PAGES;
     const firstRank = TOP_SELLER_PAGES * TOP_SELLERS_PAGE_SIZE + spyPage * CATALOGUE_PAGE_SIZE;
     const games = (await fetchTopGames(spyPage))
-      .map((g, i) => ({ ...g, rank: firstRank + i }))
-      .filter(g => !g.isFree);
+      .map((g, i) => ({ ...g, rank: firstRank + i, isFree: g.isFree ? 1 : 0 }));
     // One statement for the whole page keeps us inside D1's per-invocation query limit.
     await db.prepare(
-      `INSERT INTO games (id, name, rank, positive, negative, median_minutes)
+      `INSERT INTO games (id, name, rank, positive, negative, median_minutes, is_free)
        SELECT json_extract(value, '$.id'), json_extract(value, '$.name'), json_extract(value, '$.rank'),
-              json_extract(value, '$.positive'), json_extract(value, '$.negative'), json_extract(value, '$.medianMinutes')
+              json_extract(value, '$.positive'), json_extract(value, '$.negative'), json_extract(value, '$.medianMinutes'),
+              json_extract(value, '$.isFree')
        FROM json_each(?1) WHERE true
        ON CONFLICT(id) DO UPDATE SET rank = MIN(games.rank, excluded.rank), positive = excluded.positive,
          negative = excluded.negative, median_minutes = excluded.median_minutes
@@ -179,7 +179,7 @@ async function syncDetails(db: D1Database, now: Date): Promise<void> {
   for (const { id } of due) {
     try {
       const details = await fetchAppDetails(id);
-      if (!details || details.isFree) {
+      if (!details) {
         updates.push(db.prepare("UPDATE games SET listed = 0, details_synced_at = ? WHERE id = ?").bind(now.toISOString(), id));
         continue;
       }
@@ -188,9 +188,9 @@ async function syncDetails(db: D1Database, now: Date): Promise<void> {
       updates.push(db.prepare(
         `UPDATE games SET name = ?, developer = ?, description = ?, released = ?, tags = ?, coop = ?, deck = ?,
            positive = MAX(positive, ?), negative = MAX(negative, ?), median_minutes = MAX(median_minutes, ?),
-           listed = 1, details_synced_at = ? WHERE id = ?`,
+           is_free = ?, listed = 1, details_synced_at = ? WHERE id = ?`,
       ).bind(details.name, details.developer, details.description, details.released, JSON.stringify(spy.tags),
-        details.coop ? 1 : 0, deck, spy.positive, spy.negative, spy.medianMinutes, now.toISOString(), id));
+        details.coop ? 1 : 0, deck, spy.positive, spy.negative, spy.medianMinutes, details.isFree ? 1 : 0, now.toISOString(), id));
     } catch (err) {
       console.error(`details for ${id} failed`, err);
       // Push a failing game back in the queue so it cannot block the others, and keep it hidden until it has details.

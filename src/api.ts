@@ -1,4 +1,4 @@
-import { discountPercent, ratingScore, valueScore, verdictFor } from "./pricing.ts";
+import { discountPercent, ratingScore, valueScore, verdictFor, type TrackedPrice } from "./pricing.ts";
 import { CURRENCIES, DEFAULT_REGION, REGIONS, currencyForCountry, findRegion } from "./regions.ts";
 import { fetchOwned, fetchWishlist, resolveProfile, searchStore } from "./steam.ts";
 
@@ -71,11 +71,12 @@ interface GameRow {
   positive: number;
   negative: number;
   median_minutes: number;
-  currency: string;
-  regular: number;
-  current: number;
-  lowest: number;
-  tracked_since: string;
+  is_free: number;
+  currency: string | null;
+  regular: number | null;
+  current: number | null;
+  lowest: number | null;
+  tracked_since: string | null;
   capsule_path: string | null;
   header_path: string | null;
 }
@@ -84,17 +85,20 @@ async function listGames(env: Env, url: URL): Promise<Response> {
   const region = findRegion(url.searchParams.get("region"));
   const { results } = await env.DB.prepare(
     `SELECT g.id, g.name, g.developer, g.released, g.tags, g.coop, g.deck, g.capsule_path, g.header_path,
-            g.positive, g.negative, g.median_minutes,
+            g.positive, g.negative, g.median_minutes, g.is_free,
             p.currency, p.regular, p.current, p.lowest, p.tracked_since
-     FROM games g JOIN prices p ON p.game_id = g.id AND p.region = ?
-     WHERE g.listed = 1
+     FROM games g LEFT JOIN prices p ON p.game_id = g.id AND p.region = ?
+     WHERE g.listed = 1 AND (p.game_id IS NOT NULL OR g.is_free = 1)
      ORDER BY g.rank`,
   ).bind(region.code).all<GameRow>();
 
   const now = new Date();
   const games = results.map(g => {
-    const price = { regular: g.regular, current: g.current, lowest: g.lowest, trackedSince: g.tracked_since };
-    const verdict = verdictFor(price, now);
+    const free = g.is_free === 1 && g.current === null;
+    const price = free
+      ? { regular: 0, current: 0, lowest: 0, trackedSince: null }
+      : { regular: g.regular!, current: g.current!, lowest: g.lowest!, trackedSince: g.tracked_since! };
+    const verdict = free ? "free" : verdictFor(price as TrackedPrice, now);
     const discount = discountPercent(price);
     const rating = ratingScore(g.positive, g.negative);
     const reviews = g.positive + g.negative;
@@ -111,6 +115,7 @@ async function listGames(env: Env, url: URL): Promise<Response> {
       positivePct: reviews ? Math.round((g.positive / reviews) * 100) : null,
       medianHours: Math.round(g.median_minutes / 60),
       ...price,
+      free,
       verdict,
       discount,
       rating,
@@ -123,14 +128,17 @@ async function listGames(env: Env, url: URL): Promise<Response> {
 async function gameDetail(env: Env, id: number, url: URL): Promise<Response> {
   const region = findRegion(url.searchParams.get("region"));
   const [game, price, changes, regions] = await env.DB.batch([
-    env.DB.prepare("SELECT description, tags FROM games WHERE id = ?").bind(id),
+    env.DB.prepare("SELECT description, tags, is_free FROM games WHERE id = ?").bind(id),
     env.DB.prepare("SELECT currency, regular, current, lowest, first_price, tracked_since FROM prices WHERE game_id = ? AND region = ?").bind(id, region.code),
     env.DB.prepare("SELECT changed_at, price FROM price_changes WHERE game_id = ? AND region = ? ORDER BY changed_at").bind(id, region.code),
     env.DB.prepare("SELECT region, currency, regular, current FROM prices WHERE game_id = ?").bind(id),
   ]);
   const row = price.results[0] as { currency: string; regular: number; current: number; lowest: number; first_price: number; tracked_since: string } | undefined;
+  const info = game.results[0] as { description: string | null; tags: string; is_free: number } | undefined;
+  if (!row && info?.is_free === 1) {
+    return json({ description: info.description, tags: JSON.parse(info.tags), region: region.code, free: true, regions: [], changes: [] }, 200, CACHE_SECONDS);
+  }
   if (!row) return json({ error: "No price for this game in this region" }, 404);
-  const info = game.results[0] as { description: string | null; tags: string } | undefined;
   return json({
     description: info?.description ?? null,
     tags: info ? JSON.parse(info.tags) : [],

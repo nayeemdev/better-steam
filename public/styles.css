@@ -149,6 +149,7 @@ img.is-missing { visibility: hidden; }
 .v-good { background: var(--good); color: #2b1900; }
 .v-sale { background: var(--sale); color: #fff; }
 .v-wait, .v-steady, .v-full { background: var(--neutral); color: #fff; }
+.v-free { background: #0e7490; color: #fff; }
 .off-flag { position: absolute; right: 8px; bottom: 8px; z-index: 1; font-family: var(--heading); font-size: 15px; background: var(--accent); color: #fff; border-radius: 10px; padding: 2px 8px; }
 .title { font-weight: 700; font-size: 16px; line-height: 1.2; padding: 0 4px; overflow-wrap: anywhere; }
 .tags { color: var(--sub); font-size: 13px; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -85,6 +85,7 @@ function money(minor, code = regionCurrency()) {
 }
 
 function converted(minor) {
+  if (!minor) return "";
   const from = currencyInfo(regionCurrency());
   const to = currencyInfo(state.currency);
   if (!from || !to || from.code === to.code) return "";
@@ -102,7 +103,10 @@ function moodLabel(mood) {
   return mood.id === "cheap" ? `Under ${money(cheapLimit()).replace(/\.00$/, "")}` : mood.label;
 }
 
+const priceLabel = g => (g.free ? "Free" : money(g.current));
+
 function verdictText(g) {
+  if (g.free) return { word: "Free to play", icon: "check", why: "Free on Steam. Some free games sell extras inside the game." };
   const since = shortDate(g.trackedSince);
   switch (g.verdict) {
     case "buy": return { word: "Lowest price yet", icon: "tag", why: `The lowest price we have seen since we started tracking on ${since}.` };
@@ -243,7 +247,7 @@ function renderFeatured() {
     <span class="eyebrow">${icon("star")} ${esc(eyebrow)}</span>
     <h2>${esc(pick.name)}</h2>
     <div class="row">
-      <span class="big num">${money(pick.current)}</span>
+      <span class="big num">${priceLabel(pick)}</span>
       ${pick.discount ? `<s class="num">${money(pick.regular)}</s><span class="off">-${pick.discount}%</span>` : ""}
       ${alt ? `<span class="num">${alt}</span>` : ""}
       <button class="go" data-open="${pick.id}">See details ${icon("arrow")}</button>
@@ -255,7 +259,7 @@ function cardHtml(g) {
   const alt = converted(g.current);
   const tint = tints.get(g.id);
   return `<article class="card"${tint ? ` style="--tint:${tint}"` : ""} data-card="${g.id}" aria-current="${state.selected === g.id}">
-    <button class="open" data-open="${g.id}" aria-label="${esc(g.name)}, ${esc(v.word)}, ${money(g.current)}">
+    <button class="open" data-open="${g.id}" aria-label="${esc(g.name)}, ${esc(v.word)}, ${priceLabel(g)}">
       <div class="art">
         <span class="art-fallback" aria-hidden="true">${esc(g.name)}</span>
         <img class="fade" src="${imageUrl(g, "capsule")}" data-header="${imageUrl(g, "header")}" alt="" loading="lazy" crossorigin="anonymous" data-tint-for="${g.id}" width="600" height="900">
@@ -265,7 +269,7 @@ function cardHtml(g) {
       </div>
       <div class="title">${esc(g.name)}</div>
       <div class="tags">${esc(g.tags.slice(0, 3).join(" · "))}</div>
-      <div class="price num"><span class="now">${money(g.current)}</span>${g.discount ? `<s>${money(g.regular)}</s>` : ""}</div>
+      <div class="price num"><span class="now">${priceLabel(g)}</span>${g.discount ? `<s>${money(g.regular)}</s>` : ""}</div>
       ${alt ? `<div class="alt num">${alt}</div>` : ""}
       <div class="meta num">
         ${g.positivePct !== null ? `<span>${icon("star")}${g.positivePct}%</span>` : ""}
@@ -377,6 +381,11 @@ async function loadDetail(g) {
       blurb.outerHTML = `<p class="blurb" id="blurb">${esc(history.description)}</p>`;
     } else blurb.remove();
     if (history.tags.length) $("tagChips").innerHTML = history.tags.slice(0, 8).map(t => `<span>${esc(t)}</span>`).join("");
+    if (history.free) {
+      $("regionPrices").parentElement.remove();
+      target.innerHTML = `<div class="note">Free to play, so there is no price to track.</div>`;
+      return;
+    }
     $("regionPrices").outerHTML = regionPricesHtml(history.regions);
     const since = shortDate(history.trackedSince);
     target.innerHTML = history.changes.length < 2
@@ -418,7 +427,7 @@ function renderPreview() {
         <div class="word">${icon(v.icon)}${esc(v.word)}</div>
         <div>${esc(v.why)}</div>
         <div class="prices num">
-          <span class="now">${money(g.current)}</span>${g.discount ? `<s>${money(g.regular)}</s><span class="off">-${g.discount}%</span>` : ""}
+          <span class="now">${priceLabel(g)}</span>${g.discount ? `<s>${money(g.regular)}</s><span class="off">-${g.discount}%</span>` : ""}
           ${alt ? `<span class="alt-big">${alt}</span>` : ""}
         </div>
       </div>
@@ -439,8 +448,8 @@ function renderPreview() {
       <div id="blurb" class="skeleton-lines" aria-label="Loading description"><div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div></div>
       <div class="chips" id="tagChips">${g.tags.map(t => `<span>${esc(t)}</span>`).join("")}</div>
       <div class="actions">
-        <a class="btn primary" href="https://store.steampowered.com/app/${g.id}/" target="_blank" rel="noopener">Buy on Steam · ${money(g.current)} ${icon("ext")}</a>
-        <button class="btn" id="watchToggle" aria-pressed="${watching}">${icon("heart")}${watching ? "Watching" : "Watch price"}</button>
+        <a class="btn primary" href="https://store.steampowered.com/app/${g.id}/" target="_blank" rel="noopener">${g.free ? "Play free on Steam" : `Buy on Steam · ${money(g.current)}`} ${icon("ext")}</a>
+        ${g.free ? "" : `<button class="btn" id="watchToggle" aria-pressed="${watching}">${icon("heart")}${watching ? "Watching" : "Watch price"}</button>`}
         <button class="btn" data-hide="${g.id}">${icon("x")}Not for me</button>
       </div>
     </div>`;

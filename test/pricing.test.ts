@@ -46,3 +46,7 @@ test("rating score pulls small review counts toward the prior", () => {
 test("value score prefers better deals at equal rating", () => {
   assert.ok(valueScore(0.9, "buy", 50) > valueScore(0.9, "wait", 0));
 });
+
+test("free games rank below paid deals with the same rating", () => {
+  assert.ok(valueScore(0.9, "free", 0) < valueScore(0.9, "full", 0));
+});

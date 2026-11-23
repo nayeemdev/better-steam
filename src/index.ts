@@ -8,12 +8,12 @@ async function homePage(request: Request, env: Env): Promise<Response> {
   if (!page.ok || !Number.isInteger(id) || id <= 0) return page;
 
   const game = await env.DB.prepare(
-    `SELECT g.id, g.name, g.header_path, g.positive, g.negative,
+    `SELECT g.id, g.name, g.header_path, g.positive, g.negative, g.is_free,
             p.currency, p.regular, p.current, p.lowest, p.tracked_since
      FROM games g LEFT JOIN prices p ON p.game_id = g.id AND p.region = 'US'
      WHERE g.id = ? AND g.listed = 1`,
   ).bind(id).first<{
-    id: number; name: string; header_path: string | null; positive: number; negative: number;
+    id: number; name: string; header_path: string | null; positive: number; negative: number; is_free: number;
     currency: string | null; regular: number | null; current: number | null; lowest: number | null; tracked_since: string | null;
   }>();
   if (!game) return page;
@@ -22,7 +22,7 @@ async function homePage(request: Request, env: Env): Promise<Response> {
     ? { currency: game.currency, regular: game.regular, current: game.current, lowest: game.lowest, trackedSince: game.tracked_since }
     : null;
   return withShareMeta(page, shareMeta(
-    { id: game.id, name: game.name, headerPath: game.header_path, positive: game.positive, negative: game.negative, price },
+    { id: game.id, name: game.name, headerPath: game.header_path, positive: game.positive, negative: game.negative, free: game.is_free === 1, price },
     new Date(),
   ));
 }
