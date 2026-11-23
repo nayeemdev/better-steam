@@ -314,6 +314,28 @@ function cardHtml(g) {
   </article>`;
 }
 
+let gridKey = "";
+let gridCount = 0;
+
+// Rebuilding every card is the slowest part of a render, so the grid is only rebuilt when the list itself
+// changes. Loading more games appends the new cards, and selecting a game only moves the highlight.
+function renderGrid(list) {
+  const grid = $("grid");
+  const key = [state.region, state.currency, state.tab, [...state.moods].join(","), state.query, state.sort, state.deckOnly,
+    state.wishOnly, state.hideOwned, state.watchOnly, state.hidden.size, state.games.length,
+    state.profile?.steamId ?? "", state.profile?.wishlist.size ?? 0].join("|");
+  const shown = Math.min(state.shown, list.length);
+  if (key === gridKey && shown >= gridCount) {
+    if (shown > gridCount) grid.insertAdjacentHTML("beforeend", list.slice(gridCount, shown).map(cardHtml).join(""));
+  } else {
+    grid.innerHTML = list.slice(0, shown).map(cardHtml).join("");
+  }
+  gridKey = key;
+  gridCount = shown;
+  markLoadedImages(grid);
+  grid.querySelectorAll("[data-card]").forEach(c => c.setAttribute("aria-current", Number(c.dataset.card) === state.selected));
+}
+
 function render() {
   const active = MOODS.filter(m => state.moods.has(m.id));
   const chosen = SORTS.find(s => s.id === state.sort).fn;
@@ -351,9 +373,9 @@ function render() {
     $("grid").innerHTML = state.watchOnly
       ? `<div class="empty"><b>Your watchlist is empty</b>Open a game and choose Watch price.</div>`
       : `<div class="empty"><b>Nothing matches all of that</b>${last ? `Try without <button class="linkish" data-drop="${last.id}">${esc(moodLabel(last).toLowerCase())}</button>.` : state.query.trim() ? "We may not track this game yet. Any matches from the Steam store show below." : "Try a different search."}</div>`;
+    gridKey = "";
   } else {
-    $("grid").innerHTML = list.slice(0, state.shown).map(cardHtml).join("");
-    markLoadedImages($("grid"));
+    renderGrid(list);
   }
   $("more").hidden = list.length <= state.shown;
 
@@ -711,6 +733,7 @@ async function fetchGames(region) {
 }
 
 async function loadGames(request) {
+  gridKey = "";
   $("grid").innerHTML = placeholderCards();
   state.games = await (request ?? fetchGames(state.region));
   fillWatchBaselines();
