@@ -1,5 +1,11 @@
 {
   "name": "better-steam",
+  "description": "A calmer, clearer way to find Steam games worth buying, with real regional prices and honest deal verdicts.",
+  "homepage": "https://steam.nayeemdev.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nayeemdev/better-steam.git"
+  },
   "private": true,
   "type": "module",
   "scripts": {
