@@ -2,7 +2,9 @@ import { discountPercent, ratingScore, valueScore, verdictFor, type TrackedPrice
 import { CURRENCIES, DEFAULT_REGION, REGIONS, currencyForCountry, findRegion } from "./regions.ts";
 import { fetchOwned, fetchWishlist, resolveProfile, searchStore } from "./steam.ts";
 
-const CACHE_SECONDS = 600;
+// Prices change at most every few hours, so the edge keeps responses for 30 minutes while browsers recheck after 5.
+const CACHE_SECONDS = 1800;
+const BROWSER_CACHE_SECONDS = 300;
 const LIST_TAGS = 6;
 const DEFAULT_CAPSULE = "library_600x900.jpg";
 const DEFAULT_HEADER = "header.jpg";
@@ -12,7 +14,7 @@ function json(body: unknown, status = 200, cacheSeconds = 0): Response {
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": cacheSeconds ? `public, max-age=${cacheSeconds}` : "no-store",
+      "Cache-Control": cacheSeconds ? `public, max-age=${Math.min(cacheSeconds, BROWSER_CACHE_SECONDS)}, s-maxage=${cacheSeconds}` : "no-store",
     },
   });
 }
