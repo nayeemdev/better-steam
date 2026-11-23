@@ -30,6 +30,12 @@ const SORTS = [
   { id: "popular", label: "Most played", fn: (a, b) => b.reviews - a.reviews },
 ];
 
+const TABS = [
+  { id: "all", label: "All games", test: () => true },
+  { id: "paid", label: "Paid", test: g => !g.free },
+  { id: "free", label: "Free to play", test: g => g.free },
+];
+
 const DECK_VERIFIED = 3;
 const DECK_LABEL = { 0: "Unknown", 1: "Unsupported", 2: "Playable", 3: "Verified" };
 
@@ -56,6 +62,7 @@ const state = {
   moods: new Set((params.get("mood") ?? "").split(",").filter(id => MOODS.some(m => m.id === id))),
   sort: SORTS.some(s => s.id === params.get("sort")) ? params.get("sort") : DEFAULT_SORT,
   deckOnly: params.get("deck") === "1",
+  tab: TABS.some(t => t.id === params.get("tab")) ? params.get("tab") : "all",
   wishOnly: params.get("wish") === "1",
   hideOwned: store.get("bs-hide-owned", true),
   profile: null,
@@ -118,9 +125,10 @@ function verdictText(g) {
   }
 }
 
-function passes(g, moods) {
+function passes(g, moods, tab = state.tab) {
   if (state.watchOnly) return state.watching.has(g.id);
   if (state.hidden.has(g.id)) return false;
+  if (!TABS.find(t => t.id === tab).test(g)) return false;
   if (state.deckOnly && g.deck !== DECK_VERIFIED) return false;
   if (state.wishOnly && state.profile && !state.profile.wishlist.has(g.id)) return false;
   if (state.hideOwned && isOwned(g)) return false;
@@ -162,6 +170,7 @@ function writeUrl() {
   if (state.moods.size) next.set("mood", [...state.moods].join(","));
   if (state.sort !== DEFAULT_SORT) next.set("sort", state.sort);
   if (state.deckOnly) next.set("deck", "1");
+  if (state.tab !== "all") next.set("tab", state.tab);
   if (state.wishOnly) next.set("wish", "1");
   if (state.selected) next.set("game", state.selected);
   const query = next.toString();
@@ -218,6 +227,14 @@ function renderStatic() {
     if (s.labels[0]) s.labels[0].hidden = noRates;
   });
   $("sort").innerHTML = SORTS.map(s => `<button data-sort="${s.id}">${s.label}</button>`).join("");
+}
+
+function renderTabs(active) {
+  $("tabs").hidden = state.watchOnly;
+  $("tabs").innerHTML = TABS.map(t => {
+    const count = state.games.filter(g => passes(g, active, t.id)).length;
+    return `<button class="tab" data-tab="${t.id}" aria-pressed="${state.tab === t.id}">${t.label} <span class="num">${count}</span></button>`;
+  }).join("");
 }
 
 function renderMoods() {
@@ -297,6 +314,7 @@ function render() {
   document.querySelectorAll("[data-sort]").forEach(b => b.setAttribute("aria-pressed", state.sort === b.dataset.sort));
   document.querySelectorAll(".region-select").forEach(s => (s.value = state.region));
   document.querySelectorAll(".currency-select").forEach(s => (s.value = state.currency));
+  renderTabs(active);
   renderMoods();
   renderFeatured();
   renderAlerts();
@@ -714,10 +732,11 @@ async function changeRegion(region) {
 }
 
 document.addEventListener("click", e => {
-  const t = e.target.closest("[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect,#dismissDrops,#regionBtn,#saleDeals,#saleHide");
+  const t = e.target.closest("[data-tab],[data-mood],[data-sort],[data-open],[data-hide],[data-drop],#unhide,#clearFilters,#closeBtn,#watchToggle,#scrim,#watchBtn,#deckOnly,#wishOnly,#hideOwned,#themeBtn,#moreBtn,#profileBtn,#profileClose,#profileDisconnect,#dismissDrops,#regionBtn,#saleDeals,#saleHide");
   if (!t) return;
   const d = t.dataset;
-  if (d.mood) { state.moods.has(d.mood) ? state.moods.delete(d.mood) : state.moods.add(d.mood); state.watchOnly = false; resetPaging(); render(); }
+  if (d.tab) { state.tab = d.tab; state.watchOnly = false; resetPaging(); render(); }
+  else if (d.mood) { state.moods.has(d.mood) ? state.moods.delete(d.mood) : state.moods.add(d.mood); state.watchOnly = false; resetPaging(); render(); }
   else if (d.sort) { state.sort = d.sort; resetPaging(); render(); }
   else if (d.open) select(Number(d.open));
   else if (d.drop) { state.moods.delete(d.drop); render(); }
