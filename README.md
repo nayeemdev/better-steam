@@ -45,6 +45,18 @@ The Steam store makes it hard to find anything and harder to tell a good deal fr
   <img src="docs/screenshots/phone.webp" alt="Phone layout" width="28%">
 </p>
 
+## Design
+
+Better Steam is built as the opposite of a busy storefront: one screen, a few clear choices and no visual noise.
+
+- **Bento layout**: a grey canvas with white panels. The featured deal and eight colour-block mood tiles sit on top, with the cover grid and a sticky game preview below, so browsing never leaves the page.
+- **One answer per game**: each card leads with its cover, a verdict badge and the price. The preview explains the verdict in one sentence before showing price history and regional prices.
+- **Colour with meaning**: each mood has its own colour and icon, and verdicts keep consistent colours (green for the lowest price, amber for a good price, purple for a sale, grey for wait, teal for free). The rest of the interface stays neutral so game covers carry the colour.
+- **Typography**: Russo One for headings and prices, Chakra Petch for everything else, both served from the site.
+- **Calm by default**: light theme first with a dark theme toggle, no hover glow, zoom or lift effects, nothing that autoplays, and placeholders while covers and details load.
+- **Accessible**: readable contrast in both themes, visible keyboard focus, arrow key navigation, touch targets of at least 44 px, and reduced motion respected.
+- **Made for phones too**: a compact header with prices in a dialog, two-column covers, and the preview as a bottom sheet.
+
 <img src="docs/screenshots/regional-prices.webp" alt="A game's price in every Steam store region" width="320" align="right">
 
 ## How it works
