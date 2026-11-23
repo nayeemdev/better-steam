@@ -60,11 +60,13 @@ export function withShareMeta(page: Response, meta: ShareMeta): Response {
     .on('meta[name="description"]', set(meta.description))
     .on('meta[property="og:title"]', set(meta.title))
     .on('meta[property="og:description"]', set(meta.description))
-    .on('meta[name="twitter:card"]', set("summary_large_image"))
-    .on("head", {
-      element: el => {
-        el.append(`<meta property="og:image" content="${meta.image.replace(/"/g, "&quot;")}">`, { html: true });
-      },
-    })
+    .on('meta[property="og:image"]', set(meta.image))
+    .transform(page);
+}
+
+// Link preview crawlers need an absolute image URL, which depends on the domain the page was served from.
+export function withSiteImage(page: Response, origin: string): Response {
+  return new HTMLRewriter()
+    .on('meta[property="og:image"]', { element: el => { el.setAttribute("content", `${origin}/og-image.png`); } })
     .transform(page);
 }
