@@ -32,8 +32,13 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
 
   if (url.pathname === "/api/meta") return meta(request, env);
   if (url.pathname === "/api/status") return status(env);
-  if (url.pathname === "/api/profile") return profile(env, url);
-  if (url.pathname === "/api/search") return cached(request, ctx, () => search(url));
+  if (url.pathname === "/api/profile" || url.pathname === "/api/search") {
+    // These two call Steam on every uncached request, so each visitor gets a small budget.
+    const { success } = await env.LOOKUP_LIMITER.limit({ key: request.headers.get("CF-Connecting-IP") ?? "unknown" });
+    if (!success) return json({ error: "Too many lookups. Wait a minute and try again." }, 429);
+    if (url.pathname === "/api/profile") return profile(env, url);
+    return cached(request, ctx, () => search(url));
+  }
   if (url.pathname === "/api/games") return cached(request, ctx, () => listGames(env, url));
   const game = url.pathname.match(/^\/api\/games\/(\d+)$/);
   if (game) return cached(request, ctx, () => gameDetail(env, Number(game[1]), url));

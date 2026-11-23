@@ -91,6 +91,10 @@ Each push to `main` then applies new migrations and deploys. To deploy by hand, 
 
 `.github/workflows/ci.yml` only runs the tests and type check, on every push and pull request.
 
+### Abuse protection
+
+`/api/search` and `/api/profile` call Steam on every uncached request, so each visitor IP gets 30 of them per minute through the Workers rate limiting binding in `wrangler.jsonc`. Requests over the limit get a 429.
+
 ### Free plan limits
 
 D1's free plan allows 100,000 rows written per day. Filling prices for the first time costs about 43,000 writes (about 4,300 games in 10 regions), spread over roughly three hours. After that, writes only happen when a price changes, plus a few thousand a day for catalogue and details updates. If a big Steam sale ever pushes past the limit, writes pause until 00:00 UTC and the site keeps serving the data it has.
