@@ -79,8 +79,7 @@ const state = {
   sort: SORTS.some(s => s.id === params.get("sort")) ? params.get("sort") : DEFAULT_SORT,
   deckOnly: params.get("deck") === "1",
   tab: TABS.some(t => t.id === params.get("tab")) ? params.get("tab") : "all",
-  genre: GENRES.some(x => x.id === params.get("genre")) ? params.get("genre") : "",
-  hiddenGenres: new Set(store.get("bs-hidden-genres", []).filter(id => GENRES.some(x => x.id === id))),
+  genres: new Set((params.get("genre") ?? "").split(",").filter(id => GENRES.some(x => x.id === id))),
   wishOnly: params.get("wish") === "1",
   hideOwned: store.get("bs-hide-owned", true),
   profile: null,
@@ -143,12 +142,11 @@ function verdictText(g) {
   }
 }
 
-function passes(g, moods, tab = state.tab, genre = state.genre) {
+function passes(g, moods, tab = state.tab, genres = state.genres) {
   if (state.watchOnly) return state.watching.has(g.id);
   if (state.hidden.has(g.id)) return false;
   if (!TABS.find(t => t.id === tab).test(g)) return false;
-  if (genre && !inGenre(g, GENRES.find(x => x.id === genre))) return false;
-  if (GENRES.some(x => x.id !== genre && state.hiddenGenres.has(x.id) && inGenre(g, x))) return false;
+  if (genres.size && !GENRES.some(x => genres.has(x.id) && inGenre(g, x))) return false;
   if (state.deckOnly && g.deck !== DECK_VERIFIED) return false;
   if (state.wishOnly && state.profile && !state.profile.wishlist.has(g.id)) return false;
   if (state.hideOwned && isOwned(g)) return false;
@@ -206,7 +204,7 @@ function writeUrl() {
   if (state.sort !== DEFAULT_SORT) next.set("sort", state.sort);
   if (state.deckOnly) next.set("deck", "1");
   if (state.tab !== "all") next.set("tab", state.tab);
-  if (state.genre) next.set("genre", state.genre);
+  if (state.genres.size) next.set("genre", [...state.genres].join(","));
   if (state.wishOnly) next.set("wish", "1");
   if (state.selected) next.set("game", state.selected);
   const query = next.toString();
@@ -265,14 +263,18 @@ function renderStatic() {
   $("sort").innerHTML = SORTS.map(s => `<button data-sort="${s.id}">${s.label}</button>`).join("");
 }
 
+const genreLabel = id => GENRES.find(x => x.id === id).label;
+
 function renderGenres(active) {
-  $("genre").closest("label").hidden = $("hideGenresBtn").hidden = state.watchOnly;
-  const count = genre => state.games.filter(g => passes(g, active, state.tab, genre)).length;
-  $("genre").innerHTML = `<option value="">Any (${count("")})</option>` + GENRES
-    .map(x => `<option value="${x.id}"${state.hiddenGenres.has(x.id) ? ' class="is-hidden"' : ""}>${x.label} (${count(x.id)})</option>`)
-    .join("");
-  $("genre").value = state.genre;
-  $("hideGenresBtn").textContent = state.hiddenGenres.size ? `${state.hiddenGenres.size} hidden` : "Hide genres";
+  $("genreBtn").hidden = state.watchOnly;
+  const picked = [...state.genres];
+  const text = !picked.length ? "Any" : picked.length === 1 ? genreLabel(picked[0]) : `${picked.length} selected`;
+  $("genreBtn").innerHTML = `Genres: <b>${esc(text)}</b>`;
+  $("genreBtn").setAttribute("aria-pressed", picked.length > 0);
+  if (!$("genreDialog").open) return;
+  for (const el of document.querySelectorAll("[data-genre-count]")) {
+    el.textContent = state.games.filter(g => passes(g, active, state.tab, new Set([el.dataset.genreCount]))).length;
+  }
 }
 
 function renderTabs(active) {
@@ -351,7 +353,7 @@ let gridCount = 0;
 // changes. Loading more games appends the new cards, and selecting a game only moves the highlight.
 function renderGrid(list) {
   const grid = $("grid");
-  const key = [state.region, state.currency, state.tab, state.genre, [...state.hiddenGenres].join(","), [...state.moods].join(","), state.query, state.sort, state.deckOnly,
+  const key = [state.region, state.currency, state.tab, [...state.genres].join(","), [...state.moods].join(","), state.query, state.sort, state.deckOnly,
     state.wishOnly, state.hideOwned, state.watchOnly, state.hidden.size, state.games.length,
     state.profile?.steamId ?? "", state.profile?.wishlist.size ?? 0].join("|");
   const shown = Math.min(state.shown, list.length);
@@ -389,11 +391,12 @@ function render() {
   renderAlerts();
   renderSaleBanner();
 
-  const filters = [...(state.genre ? [GENRES.find(x => x.id === state.genre).label.toLowerCase()] : []), ...active.map(m => moodLabel(m).toLowerCase())];
+  const genreText = [...state.genres].map(id => genreLabel(id).toLowerCase()).join(" or ");
+  const filters = [...(genreText ? [genreText] : []), ...active.map(m => moodLabel(m).toLowerCase())];
   let summary = state.watchOnly
     ? `<b class="num">${list.length}</b>on your watchlist`
     : `<b class="num">${list.length}</b>${list.length === 1 ? "game" : "games"}${filters.length ? " for " + esc(filters.join(" + ")) : ""}`;
-  if (!state.watchOnly && (active.length || state.query || state.deckOnly || state.wishOnly || state.genre)) summary += ` · <button class="linkish" id="clearFilters">Clear filters</button>`;
+  if (!state.watchOnly && (active.length || state.query || state.deckOnly || state.wishOnly || state.genres.size)) summary += ` · <button class="linkish" id="clearFilters">Clear filters</button>`;
   if (!state.watchOnly && state.hidden.size) summary += ` · ${state.hidden.size} hidden <button class="linkish" id="unhide">Restore</button>`;
   $("summary").innerHTML = summary;
 
@@ -844,7 +847,7 @@ document.addEventListener("click", e => {
     toast(`Hidden ${byId(id).name}`, () => { state.hidden.delete(id); saveHidden(); render(); });
   }
   else if (t.id === "unhide") { state.hidden.clear(); saveHidden(); render(); }
-  else if (t.id === "clearFilters") { state.moods.clear(); state.query = ""; $("q").value = ""; scheduleSteamSearch(); state.deckOnly = false; state.wishOnly = false; state.genre = ""; resetPaging(); render(); }
+  else if (t.id === "clearFilters") { state.moods.clear(); state.query = ""; $("q").value = ""; scheduleSteamSearch(); state.deckOnly = false; state.wishOnly = false; state.genres.clear(); resetPaging(); render(); }
   else if (t.id === "closeBtn" || t.id === "scrim") closePreview();
   else if (t.id === "watchBtn") { state.watchOnly = !state.watchOnly; resetPaging(); render(); }
   else if (t.id === "deckOnly") { state.deckOnly = !state.deckOnly; resetPaging(); render(); }
@@ -930,22 +933,26 @@ document.addEventListener("keydown", e => {
 });
 
 $("q").addEventListener("input", e => { state.query = e.target.value; state.watchOnly = false; resetPaging(); render(); scheduleSteamSearch(); });
-$("genre").addEventListener("change", e => {
-  state.genre = e.target.value;
+$("genreBtn").addEventListener("click", () => {
+  $("genreChecks").innerHTML = GENRES.map(x => `<label class="genre-check">
+    <input type="checkbox" value="${x.id}"${state.genres.has(x.id) ? " checked" : ""}>
+    <span>${x.label}</span><span class="num genre-count" data-genre-count="${x.id}"></span>
+  </label>`).join("");
+  $("genreDialog").showModal();
+  render();
+});
+
+$("genreChecks").addEventListener("change", e => {
+  const id = e.target.value;
+  e.target.checked ? state.genres.add(id) : state.genres.delete(id);
   state.watchOnly = false;
   resetPaging();
   render();
 });
 
-$("hideGenresBtn").addEventListener("click", () => {
-  $("genreChecks").innerHTML = GENRES.map(x => `<label class="genre-check"><input type="checkbox" value="${x.id}"${state.hiddenGenres.has(x.id) ? " checked" : ""}> ${x.label}</label>`).join("");
-  $("genreDialog").showModal();
-});
-
-$("genreChecks").addEventListener("change", e => {
-  const id = e.target.value;
-  e.target.checked ? state.hiddenGenres.add(id) : state.hiddenGenres.delete(id);
-  store.set("bs-hidden-genres", [...state.hiddenGenres]);
+$("genreClear").addEventListener("click", () => {
+  state.genres.clear();
+  $("genreChecks").querySelectorAll("input").forEach(i => (i.checked = false));
   resetPaging();
   render();
 });

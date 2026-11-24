@@ -23,7 +23,7 @@ The Steam store makes it hard to find anything and harder to tell a good deal fr
 
 - **Mood tiles**: On sale now, Under $15, Play with friends, Short and sweet, Something cosy, One more run, Strategy and puzzles, A great story. Each shows how many games match, and they combine.
 - **All games, Paid and Free to play tabs**, plus a Steam Deck Verified switch and five sort orders.
-- **Genres**: a short genre picker with live counts (Action, RPG, Strategy, Simulation and more, each grouping related Steam tags), and a "Hide genres" setting for genres you never want to see.
+- **Genres**: pick one or more of ten broad genres (Action, RPG, Strategy, Simulation and more, each grouping related Steam tags) with live counts, and see games from any of them.
 - **Search that understands short names**: `gta5`, `cod mw4`, `fh6` and `rdr2` find their games, with Roman numerals read as numbers. Games not tracked yet come from Steam's own search with a store link.
 - **Similar games** in each preview, matched on shared tags and weighted toward good reviews and current discounts.
 - **Steam profile** (no sign in): paste a profile link to filter by your public wishlist and hide games you own.
