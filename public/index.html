@@ -80,6 +80,8 @@
         <div class="tabs" id="tabs" role="group" aria-label="Show"></div>
         <div class="toolbar">
           <div class="summary" id="summary" aria-live="polite"></div>
+          <label class="genre-pick">Genre <select id="genre"></select></label>
+          <button class="linkish" id="hideGenresBtn">Hide genres</button>
           <button class="switch" id="deckOnly" aria-pressed="false"><span class="knob"></span>Steam Deck Verified</button>
           <button class="switch" id="wishOnly" aria-pressed="false" hidden><span class="knob"></span>My wishlist</button>
           <button class="switch" id="hideOwned" aria-pressed="true" hidden><span class="knob"></span>Hide owned</button>
@@ -120,6 +122,15 @@
         <button type="button" class="btn" id="profileClose">Close</button>
         <button type="submit" class="btn primary" id="profileSubmit">Connect</button>
       </div>
+    </form>
+  </dialog>
+
+  <dialog id="genreDialog" aria-labelledby="genreDialogTitle">
+    <form method="dialog" class="dialog-body">
+      <h2 id="genreDialogTitle">Hide genres</h2>
+      <p>Games in these genres stay out of your lists, unless you pick that genre on purpose. This is saved in this browser.</p>
+      <div class="genre-checks" id="genreChecks"></div>
+      <div class="dialog-actions"><button class="btn primary">Done</button></div>
     </form>
   </dialog>
 

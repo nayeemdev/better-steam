@@ -125,6 +125,11 @@ svg.i { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-widt
 .tab span { font-weight: 600; font-size: 13px; color: var(--sub); background: var(--muted); border-radius: 8px; padding: 1px 7px; margin-left: 4px; }
 .tab[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--primary); }
 .tab[aria-pressed="true"] span { background: var(--primary); color: var(--on-primary); }
+.genre-pick { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: var(--sub); }
+.genre-pick select { min-height: 44px; border-radius: 14px; border: 0; background: var(--muted); color: var(--ink); padding: 0 12px; font-weight: 600; max-width: 230px; }
+.genre-checks { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 4px; }
+.genre-check { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border-radius: 12px; background: var(--muted); font-weight: 600; cursor: pointer; }
+.genre-check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 14px; }
 .summary { flex: 1; min-width: 200px; color: var(--sub); font-weight: 500; }
 .summary b { font-family: var(--heading); font-weight: 400; color: var(--ink); font-size: 20px; margin-right: 4px; }

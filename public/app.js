@@ -37,6 +37,21 @@ const TABS = [
   { id: "free", label: "Free to play", test: g => g.free },
 ];
 
+// Broad genres group Steam's many user tags so the picker stays short.
+const GENRES = [
+  { id: "action", label: "Action", tags: ["Action", "Hack and Slash", "Fighting", "Beat 'em up", "Character Action Game", "Action-Adventure"] },
+  { id: "adventure", label: "Adventure", tags: ["Adventure", "Point & Click", "Visual Novel", "Walking Simulator", "Exploration", "Story Rich"] },
+  { id: "rpg", label: "RPG", tags: ["RPG", "Action RPG", "JRPG", "CRPG", "Party-Based RPG", "Turn-Based RPG", "Strategy RPG", "MMORPG"] },
+  { id: "strategy", label: "Strategy", tags: ["Strategy", "RTS", "Turn-Based Strategy", "Grand Strategy", "4X", "Tower Defense", "Turn-Based Tactics", "Card Battler", "City Builder"] },
+  { id: "simulation", label: "Simulation", tags: ["Simulation", "Life Sim", "Farming Sim", "Management", "Building", "Colony Sim", "Space Sim", "Flight", "Sandbox"] },
+  { id: "shooter", label: "Shooter", tags: ["Shooter", "FPS", "Third-Person Shooter", "Looter Shooter", "Hero Shooter", "Arena Shooter", "Shoot 'Em Up", "Bullet Hell"] },
+  { id: "racing", label: "Racing and sports", tags: ["Racing", "Driving", "Automobile Sim", "Sports", "Football (Soccer)", "Basketball", "Golf"] },
+  { id: "puzzle", label: "Puzzle", tags: ["Puzzle", "Logic", "Puzzle Platformer", "Hidden Object", "Match 3"] },
+  { id: "platformer", label: "Platformer", tags: ["Platformer", "2D Platformer", "3D Platformer", "Precision Platformer", "Metroidvania"] },
+  { id: "horror", label: "Horror and survival", tags: ["Horror", "Survival Horror", "Psychological Horror", "Survival", "Zombies"] },
+];
+const inGenre = (g, genre) => genre.tags.some(t => g.tags.includes(t));
+
 const DECK_VERIFIED = 3;
 const DECK_LABEL = { 0: "Unknown", 1: "Unsupported", 2: "Playable", 3: "Verified" };
 
@@ -64,6 +79,8 @@ const state = {
   sort: SORTS.some(s => s.id === params.get("sort")) ? params.get("sort") : DEFAULT_SORT,
   deckOnly: params.get("deck") === "1",
   tab: TABS.some(t => t.id === params.get("tab")) ? params.get("tab") : "all",
+  genre: GENRES.some(x => x.id === params.get("genre")) ? params.get("genre") : "",
+  hiddenGenres: new Set(store.get("bs-hidden-genres", []).filter(id => GENRES.some(x => x.id === id))),
   wishOnly: params.get("wish") === "1",
   hideOwned: store.get("bs-hide-owned", true),
   profile: null,
@@ -126,10 +143,12 @@ function verdictText(g) {
   }
 }
 
-function passes(g, moods, tab = state.tab) {
+function passes(g, moods, tab = state.tab, genre = state.genre) {
   if (state.watchOnly) return state.watching.has(g.id);
   if (state.hidden.has(g.id)) return false;
   if (!TABS.find(t => t.id === tab).test(g)) return false;
+  if (genre && !inGenre(g, GENRES.find(x => x.id === genre))) return false;
+  if (GENRES.some(x => x.id !== genre && state.hiddenGenres.has(x.id) && inGenre(g, x))) return false;
   if (state.deckOnly && g.deck !== DECK_VERIFIED) return false;
   if (state.wishOnly && state.profile && !state.profile.wishlist.has(g.id)) return false;
   if (state.hideOwned && isOwned(g)) return false;
@@ -187,6 +206,7 @@ function writeUrl() {
   if (state.sort !== DEFAULT_SORT) next.set("sort", state.sort);
   if (state.deckOnly) next.set("deck", "1");
   if (state.tab !== "all") next.set("tab", state.tab);
+  if (state.genre) next.set("genre", state.genre);
   if (state.wishOnly) next.set("wish", "1");
   if (state.selected) next.set("game", state.selected);
   const query = next.toString();
@@ -243,6 +263,16 @@ function renderStatic() {
     if (s.labels[0]) s.labels[0].hidden = noRates;
   });
   $("sort").innerHTML = SORTS.map(s => `<button data-sort="${s.id}">${s.label}</button>`).join("");
+}
+
+function renderGenres(active) {
+  $("genre").closest("label").hidden = $("hideGenresBtn").hidden = state.watchOnly;
+  const count = genre => state.games.filter(g => passes(g, active, state.tab, genre)).length;
+  $("genre").innerHTML = `<option value="">Any (${count("")})</option>` + GENRES
+    .map(x => `<option value="${x.id}"${state.hiddenGenres.has(x.id) ? ' class="is-hidden"' : ""}>${x.label} (${count(x.id)})</option>`)
+    .join("");
+  $("genre").value = state.genre;
+  $("hideGenresBtn").textContent = state.hiddenGenres.size ? `${state.hiddenGenres.size} hidden` : "Hide genres";
 }
 
 function renderTabs(active) {
@@ -321,7 +351,7 @@ let gridCount = 0;
 // changes. Loading more games appends the new cards, and selecting a game only moves the highlight.
 function renderGrid(list) {
   const grid = $("grid");
-  const key = [state.region, state.currency, state.tab, [...state.moods].join(","), state.query, state.sort, state.deckOnly,
+  const key = [state.region, state.currency, state.tab, state.genre, [...state.hiddenGenres].join(","), [...state.moods].join(","), state.query, state.sort, state.deckOnly,
     state.wishOnly, state.hideOwned, state.watchOnly, state.hidden.size, state.games.length,
     state.profile?.steamId ?? "", state.profile?.wishlist.size ?? 0].join("|");
   const shown = Math.min(state.shown, list.length);
@@ -353,16 +383,17 @@ function render() {
   document.querySelectorAll(".region-select").forEach(s => (s.value = state.region));
   document.querySelectorAll(".currency-select").forEach(s => (s.value = state.currency));
   renderTabs(active);
+  renderGenres(active);
   renderMoods();
   renderFeatured();
   renderAlerts();
   renderSaleBanner();
 
-  const filters = active.map(m => moodLabel(m).toLowerCase());
+  const filters = [...(state.genre ? [GENRES.find(x => x.id === state.genre).label.toLowerCase()] : []), ...active.map(m => moodLabel(m).toLowerCase())];
   let summary = state.watchOnly
     ? `<b class="num">${list.length}</b>on your watchlist`
     : `<b class="num">${list.length}</b>${list.length === 1 ? "game" : "games"}${filters.length ? " for " + esc(filters.join(" + ")) : ""}`;
-  if (!state.watchOnly && (active.length || state.query || state.deckOnly || state.wishOnly)) summary += ` · <button class="linkish" id="clearFilters">Clear filters</button>`;
+  if (!state.watchOnly && (active.length || state.query || state.deckOnly || state.wishOnly || state.genre)) summary += ` · <button class="linkish" id="clearFilters">Clear filters</button>`;
   if (!state.watchOnly && state.hidden.size) summary += ` · ${state.hidden.size} hidden <button class="linkish" id="unhide">Restore</button>`;
   $("summary").innerHTML = summary;
 
@@ -813,7 +844,7 @@ document.addEventListener("click", e => {
     toast(`Hidden ${byId(id).name}`, () => { state.hidden.delete(id); saveHidden(); render(); });
   }
   else if (t.id === "unhide") { state.hidden.clear(); saveHidden(); render(); }
-  else if (t.id === "clearFilters") { state.moods.clear(); state.query = ""; $("q").value = ""; scheduleSteamSearch(); state.deckOnly = false; state.wishOnly = false; resetPaging(); render(); }
+  else if (t.id === "clearFilters") { state.moods.clear(); state.query = ""; $("q").value = ""; scheduleSteamSearch(); state.deckOnly = false; state.wishOnly = false; state.genre = ""; resetPaging(); render(); }
   else if (t.id === "closeBtn" || t.id === "scrim") closePreview();
   else if (t.id === "watchBtn") { state.watchOnly = !state.watchOnly; resetPaging(); render(); }
   else if (t.id === "deckOnly") { state.deckOnly = !state.deckOnly; resetPaging(); render(); }
@@ -899,6 +930,26 @@ document.addEventListener("keydown", e => {
 });
 
 $("q").addEventListener("input", e => { state.query = e.target.value; state.watchOnly = false; resetPaging(); render(); scheduleSteamSearch(); });
+$("genre").addEventListener("change", e => {
+  state.genre = e.target.value;
+  state.watchOnly = false;
+  resetPaging();
+  render();
+});
+
+$("hideGenresBtn").addEventListener("click", () => {
+  $("genreChecks").innerHTML = GENRES.map(x => `<label class="genre-check"><input type="checkbox" value="${x.id}"${state.hiddenGenres.has(x.id) ? " checked" : ""}> ${x.label}</label>`).join("");
+  $("genreDialog").showModal();
+});
+
+$("genreChecks").addEventListener("change", e => {
+  const id = e.target.value;
+  e.target.checked ? state.hiddenGenres.add(id) : state.hiddenGenres.delete(id);
+  store.set("bs-hidden-genres", [...state.hiddenGenres]);
+  resetPaging();
+  render();
+});
+
 document.querySelectorAll(".currency-select").forEach(s => s.addEventListener("change", e => {
   state.currency = e.target.value;
   store.set("bs-currency", state.currency);
