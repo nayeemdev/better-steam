@@ -105,76 +105,102 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
 
 interface PriceCursor {
   region: number;
-  afterRank: number;
-  afterId: number;
+  offset: number;
 }
 
-const START: Omit<PriceCursor, "region"> = { afterRank: -1, afterId: 0 };
+type PriceSnapshot = Record<string, [regular: number, current: number]>;
 
-// Prices are fetched in chunks of 150 games and resume after the last game priced, reading only
-// the games this run needs, so a catalogue too big for one run still cycles through every region.
+const QUEUE_KEY = "price_queue";
+const CURSOR_KEY = "prices_cursor";
+const snapshotKey = (region: Region) => `prices:${region.code}`;
+
+function stateStatement(db: D1Database, key: string, value: string): D1PreparedStatement {
+  return db.prepare("INSERT INTO sync_state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").bind(key, value);
+}
+
+// The ordered list of games to price is stored as one row and rebuilt at the start of each pass through
+// the regions, so a normal run reads one row instead of thousands of games.
+async function priceQueue(db: D1Database, rebuild: boolean): Promise<number[]> {
+  if (!rebuild) {
+    const saved = await getState(db, QUEUE_KEY);
+    if (saved) return JSON.parse(saved);
+  }
+  const { results } = await db.prepare("SELECT id FROM games WHERE listed = 1 AND is_free = 0 ORDER BY rank, id").all<{ id: number }>();
+  const ids = results.map(r => r.id);
+  await setState(db, QUEUE_KEY, JSON.stringify(ids));
+  return ids;
+}
+
+// Prices are fetched in chunks of 150 games and resume where the previous run stopped,
+// so a catalogue too big for one run still cycles through every region.
 async function syncPrices(db: D1Database, now: Date): Promise<void> {
-  const saved = await getState(db, "prices_cursor");
-  let cursor: PriceCursor = saved ? JSON.parse(saved) : { region: 0, ...START };
+  const saved = await getState(db, CURSOR_KEY);
+  const parsed = saved ? JSON.parse(saved) : {};
+  let cursor: PriceCursor = { region: Number(parsed.region) || 0, offset: Number(parsed.offset) || 0 };
+  const ids = await priceQueue(db, cursor.region === 0 && cursor.offset === 0);
+  if (!ids.length) return;
+
   let requests = PRICE_REQUESTS_PER_RUN;
-  let emptyRegions = 0;
-
-  while (requests > 0 && emptyRegions < REGIONS.length) {
+  while (requests > 0) {
     const region = REGIONS[cursor.region % REGIONS.length];
-    const limit = requests * PRICE_BATCH;
-    const { results: games } = await db.prepare(
-      `SELECT id, rank FROM games WHERE listed = 1 AND is_free = 0 AND (rank > ?1 OR (rank = ?1 AND id > ?2))
-       ORDER BY rank, id LIMIT ?3`,
-    ).bind(cursor.afterRank, cursor.afterId, limit).all<{ id: number; rank: number }>();
-
     const fetched: RegionalPrice[] = [];
-    for (let i = 0; i < games.length; i += PRICE_BATCH) {
-      const chunk = games.slice(i, i + PRICE_BATCH);
+    while (requests > 0 && cursor.offset < ids.length) {
+      const chunk = ids.slice(cursor.offset, cursor.offset + PRICE_BATCH);
       try {
-        fetched.push(...await fetchPrices(chunk.map(g => g.id), region.steamCountry));
+        fetched.push(...await fetchPrices(chunk, region.steamCountry));
       } catch (err) {
-        console.error(`prices for ${region.code} after rank ${cursor.afterRank} failed`, err);
+        console.error(`prices for ${region.code} at ${cursor.offset} failed`, err);
       }
-      const last = chunk[chunk.length - 1];
-      cursor = { region: cursor.region, afterRank: last.rank, afterId: last.id };
+      cursor = { region: cursor.region, offset: cursor.offset + PRICE_BATCH };
       requests--;
     }
-    emptyRegions = games.length ? 0 : emptyRegions + 1;
-    if (games.length < limit) cursor = { region: (cursor.region + 1) % REGIONS.length, ...START };
-    await savePrices(db, region, fetched, now);
-    await setState(db, "prices_cursor", JSON.stringify(cursor));
+    const finishedRegion = cursor.offset >= ids.length;
+    if (finishedRegion) cursor = { region: (cursor.region + 1) % REGIONS.length, offset: 0 };
+    await savePrices(db, region, fetched, now, cursor);
+    if (finishedRegion && cursor.region === 0) break;
   }
 }
 
-async function savePrices(db: D1Database, region: Region, fetched: RegionalPrice[], now: Date): Promise<void> {
-  if (!fetched.length) return;
-  const { results: existing } = await db.prepare(
-    "SELECT game_id, regular, current FROM prices WHERE region = ? AND game_id IN (SELECT value FROM json_each(?))",
-  ).bind(region.code, JSON.stringify(fetched.map(p => p.id))).all<{ game_id: number; regular: number; current: number }>();
-  const known = new Map(existing.map(p => [p.game_id, p]));
-  const updated = fetched.filter(p => {
-    const old = known.get(p.id);
-    return old && (old.current !== p.current || old.regular !== p.regular);
-  });
-  const changed = [...fetched.filter(p => !known.has(p.id)), ...updated];
-  if (!changed.length) return;
+async function loadSnapshot(db: D1Database, region: Region): Promise<PriceSnapshot> {
+  const saved = await getState(db, snapshotKey(region));
+  if (saved) return JSON.parse(saved);
+  const { results } = await db.prepare("SELECT game_id, regular, current FROM prices WHERE region = ?")
+    .bind(region.code).all<{ game_id: number; regular: number; current: number }>();
+  return Object.fromEntries(results.map(r => [r.game_id, [r.regular, r.current]]));
+}
 
-  const stamp = now.toISOString();
-  const statements = [
-    db.prepare(
+// Each region keeps a compact copy of its last seen prices in one row, so finding what changed reads
+// one row instead of one per game. It is written in the same transaction as the prices it mirrors.
+async function savePrices(db: D1Database, region: Region, fetched: RegionalPrice[], now: Date, cursor: PriceCursor): Promise<void> {
+  const statements = [stateStatement(db, CURSOR_KEY, JSON.stringify(cursor))];
+  const snapshot = fetched.length ? await loadSnapshot(db, region) : {};
+  const added: RegionalPrice[] = [];
+  const updated: RegionalPrice[] = [];
+  for (const p of fetched) {
+    const old = snapshot[p.id];
+    if (!old) added.push(p);
+    else if (old[0] !== p.regular || old[1] !== p.current) updated.push(p);
+    snapshot[p.id] = [p.regular, p.current];
+  }
+
+  const changed = [...added, ...updated];
+  if (changed.length) {
+    const stamp = now.toISOString();
+    statements.push(db.prepare(
       `INSERT INTO prices (game_id, region, currency, regular, current, lowest, first_price, tracked_since, updated_at)
        SELECT json_extract(value, '$.id'), ?1, json_extract(value, '$.currency'), json_extract(value, '$.regular'),
               json_extract(value, '$.current'), json_extract(value, '$.current'), json_extract(value, '$.current'), ?2, ?2
        FROM json_each(?3) WHERE true
        ON CONFLICT(game_id, region) DO UPDATE SET currency = excluded.currency, regular = excluded.regular,
          current = excluded.current, lowest = MIN(prices.lowest, excluded.current), updated_at = excluded.updated_at`,
-    ).bind(region.code, stamp, JSON.stringify(changed)),
-  ];
-  if (updated.length) {
-    statements.push(db.prepare(
-      `INSERT OR IGNORE INTO price_changes (game_id, region, changed_at, price)
-       SELECT json_extract(value, '$.id'), ?1, ?2, json_extract(value, '$.current') FROM json_each(?3)`,
-    ).bind(region.code, stamp, JSON.stringify(updated)));
+    ).bind(region.code, stamp, JSON.stringify(changed)));
+    if (updated.length) {
+      statements.push(db.prepare(
+        `INSERT OR IGNORE INTO price_changes (game_id, region, changed_at, price)
+         SELECT json_extract(value, '$.id'), ?1, ?2, json_extract(value, '$.current') FROM json_each(?3)`,
+      ).bind(region.code, stamp, JSON.stringify(updated)));
+    }
+    statements.push(stateStatement(db, snapshotKey(region), JSON.stringify(snapshot)));
   }
   await db.batch(statements);
 }
