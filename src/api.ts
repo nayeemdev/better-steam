@@ -2,8 +2,10 @@ import { discountPercent, ratingScore, valueScore, verdictFor, type TrackedPrice
 import { CURRENCIES, DEFAULT_REGION, REGIONS, currencyForCountry, findRegion } from "./regions.ts";
 import { fetchOwned, fetchWishlist, resolveProfile, searchStore } from "./steam.ts";
 
-// Prices change at most every few hours, so the edge keeps responses for 30 minutes while browsers recheck after 5.
-const CACHE_SECONDS = 1800;
+// Prices change at most every few hours, so the edge keeps responses for an hour while browsers recheck after 5.
+// Every edge miss on the game list reads about 9,000 D1 rows, so this matters for the free plan's daily reads.
+const CACHE_SECONDS = 3600;
+const STATUS_CACHE_SECONDS = 300;
 const BROWSER_CACHE_SECONDS = 300;
 const LIST_TAGS = 6;
 const DEFAULT_CAPSULE = "library_600x900.jpg";
@@ -37,7 +39,7 @@ export async function handleApi(request: Request, env: Env, ctx: ExecutionContex
   const url = new URL(request.url);
 
   if (url.pathname === "/api/meta") return meta(request, env);
-  if (url.pathname === "/api/status") return status(env);
+  if (url.pathname === "/api/status") return cached(request, ctx, () => status(env));
   if (url.pathname === "/api/profile" || url.pathname === "/api/search") {
     // These two call Steam on every uncached request, so each visitor gets a small budget.
     const { success } = await env.LOOKUP_LIMITER.limit({ key: request.headers.get("CF-Connecting-IP") ?? "unknown" });
@@ -237,5 +239,5 @@ async function status(env: Env): Promise<Response> {
       })),
     },
     ratesUpdatedAt: c.rates_at,
-  });
+  }, 200, STATUS_CACHE_SECONDS);
 }

@@ -93,7 +93,8 @@ flowchart LR
   - details for 10 games (description, tags, co-op, Steam Deck status) and image paths for 100 games
   - one page of the catalogue (Steam's top 500 sellers, then SteamSpy's top 5,000 most owned games) and exchange rates once a day
 - **Writes stay small**: prices are only written when they change, which keeps D1 well under its 100,000 daily row writes.
-- **Caching**: API responses are cached at Cloudflare's edge for 30 minutes and in browsers for 5. Game details are cached in the page.
+- **Reads stay small**: the sync's queues use partial indexes, so each run reads only the games it works on, which keeps D1 well under its 5 million daily row reads.
+- **Caching**: API responses are cached at Cloudflare's edge for an hour and in browsers for 5 minutes. Game details are cached in the page.
 - **Honest verdicts**: until a game has 30 days of tracked history, a discount is shown as "On sale" rather than claiming a record low.
 
 ### Tech stack

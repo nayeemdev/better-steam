@@ -103,33 +103,42 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
 
 interface PriceCursor {
   region: number;
-  offset: number;
+  afterRank: number;
+  afterId: number;
 }
 
-// Prices are fetched in chunks of 150 games and resume where the previous run stopped,
-// so a catalogue too big for one run still cycles through every region.
+const START: Omit<PriceCursor, "region"> = { afterRank: -1, afterId: 0 };
+
+// Prices are fetched in chunks of 150 games and resume after the last game priced, reading only
+// the games this run needs, so a catalogue too big for one run still cycles through every region.
 async function syncPrices(db: D1Database, now: Date): Promise<void> {
   const saved = await getState(db, "prices_cursor");
-  let cursor: PriceCursor = saved ? JSON.parse(saved) : { region: 0, offset: 0 };
-  const { results } = await db.prepare("SELECT id FROM games WHERE listed = 1 AND is_free = 0 ORDER BY rank").all<{ id: number }>();
-  const ids = results.map(r => r.id);
-  if (!ids.length) return;
-
+  let cursor: PriceCursor = saved ? JSON.parse(saved) : { region: 0, ...START };
   let requests = PRICE_REQUESTS_PER_RUN;
-  while (requests > 0) {
+  let emptyRegions = 0;
+
+  while (requests > 0 && emptyRegions < REGIONS.length) {
     const region = REGIONS[cursor.region % REGIONS.length];
+    const limit = requests * PRICE_BATCH;
+    const { results: games } = await db.prepare(
+      `SELECT id, rank FROM games WHERE listed = 1 AND is_free = 0 AND (rank > ?1 OR (rank = ?1 AND id > ?2))
+       ORDER BY rank, id LIMIT ?3`,
+    ).bind(cursor.afterRank, cursor.afterId, limit).all<{ id: number; rank: number }>();
+
     const fetched: RegionalPrice[] = [];
-    while (requests > 0 && cursor.offset < ids.length) {
-      const chunk = ids.slice(cursor.offset, cursor.offset + PRICE_BATCH);
+    for (let i = 0; i < games.length; i += PRICE_BATCH) {
+      const chunk = games.slice(i, i + PRICE_BATCH);
       try {
-        fetched.push(...await fetchPrices(chunk, region.steamCountry));
+        fetched.push(...await fetchPrices(chunk.map(g => g.id), region.steamCountry));
       } catch (err) {
-        console.error(`prices for ${region.code} at ${cursor.offset} failed`, err);
+        console.error(`prices for ${region.code} after rank ${cursor.afterRank} failed`, err);
       }
-      cursor.offset += PRICE_BATCH;
+      const last = chunk[chunk.length - 1];
+      cursor = { region: cursor.region, afterRank: last.rank, afterId: last.id };
       requests--;
     }
-    if (cursor.offset >= ids.length) cursor = { region: (cursor.region + 1) % REGIONS.length, offset: 0 };
+    emptyRegions = games.length ? 0 : emptyRegions + 1;
+    if (games.length < limit) cursor = { region: (cursor.region + 1) % REGIONS.length, ...START };
     await savePrices(db, region, fetched, now);
     await setState(db, "prices_cursor", JSON.stringify(cursor));
   }
@@ -170,10 +179,15 @@ async function savePrices(db: D1Database, region: Region, fetched: RegionalPrice
 
 async function syncDetails(db: D1Database, now: Date): Promise<void> {
   const staleBefore = new Date(now.getTime() - DETAILS_MAX_AGE_MS).toISOString();
-  const { results: due } = await db.prepare(
-    `SELECT id FROM games WHERE details_synced_at IS NULL OR details_synced_at < ?
-     ORDER BY details_synced_at IS NOT NULL, rank LIMIT ?`,
-  ).bind(staleBefore, DETAILS_PER_RUN).all<{ id: number }>();
+  // Two indexed queries instead of one that scans the table: games never fetched first, then the oldest.
+  const { results: fresh } = await db.prepare("SELECT id FROM games WHERE details_synced_at IS NULL ORDER BY rank LIMIT ?")
+    .bind(DETAILS_PER_RUN).all<{ id: number }>();
+  const { results: stale } = fresh.length < DETAILS_PER_RUN
+    ? await db.prepare(
+      "SELECT id FROM games WHERE details_synced_at IS NOT NULL AND details_synced_at < ? ORDER BY details_synced_at LIMIT ?",
+    ).bind(staleBefore, DETAILS_PER_RUN - fresh.length).all<{ id: number }>()
+    : { results: [] };
+  const due = [...fresh, ...stale];
 
   const updates: D1PreparedStatement[] = [];
   for (const { id } of due) {
