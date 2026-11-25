@@ -13,6 +13,7 @@ const DETAILS_PER_RUN = 10;
 const IMAGE_LOOKUPS_PER_RUN = 100;
 const DETAILS_MAX_AGE_MS = 7 * DAY_MS;
 const DETAILS_RETRY_MS = DAY_MS;
+const DETAILS_RETRY_SLOTS = 3;
 const STEAMSPY_GAP_MS = 1100;
 
 type Task = (db: D1Database, now: Date) => Promise<void>;
@@ -86,9 +87,10 @@ async function syncCatalogue(db: D1Database, now: Date): Promise<void> {
               json_extract(value, '$.isFree')
        FROM json_each(?1) WHERE true
        ON CONFLICT(id) DO UPDATE SET rank = MIN(games.rank, excluded.rank), positive = excluded.positive,
-         negative = excluded.negative, median_minutes = excluded.median_minutes
+         negative = excluded.negative, median_minutes = excluded.median_minutes, is_free = excluded.is_free
        WHERE games.positive IS NOT excluded.positive OR games.negative IS NOT excluded.negative
-         OR games.median_minutes IS NOT excluded.median_minutes OR games.rank > excluded.rank`,
+         OR games.median_minutes IS NOT excluded.median_minutes OR games.rank > excluded.rank
+         OR games.is_free IS NOT excluded.is_free`,
     ).bind(JSON.stringify(games)).run();
   }
 
@@ -179,15 +181,14 @@ async function savePrices(db: D1Database, region: Region, fetched: RegionalPrice
 
 async function syncDetails(db: D1Database, now: Date): Promise<void> {
   const staleBefore = new Date(now.getTime() - DETAILS_MAX_AGE_MS).toISOString();
-  // Two indexed queries instead of one that scans the table: games never fetched first, then the oldest.
+  // Two indexed queries instead of one that scans the table. A few slots always go to games that are
+  // due again, including ones whose last attempt failed, so they are not stuck behind every new game.
+  const { results: stale } = await db.prepare(
+    "SELECT id FROM games WHERE details_synced_at IS NOT NULL AND details_synced_at < ? ORDER BY details_synced_at LIMIT ?",
+  ).bind(staleBefore, DETAILS_RETRY_SLOTS).all<{ id: number }>();
   const { results: fresh } = await db.prepare("SELECT id FROM games WHERE details_synced_at IS NULL ORDER BY rank LIMIT ?")
-    .bind(DETAILS_PER_RUN).all<{ id: number }>();
-  const { results: stale } = fresh.length < DETAILS_PER_RUN
-    ? await db.prepare(
-      "SELECT id FROM games WHERE details_synced_at IS NOT NULL AND details_synced_at < ? ORDER BY details_synced_at LIMIT ?",
-    ).bind(staleBefore, DETAILS_PER_RUN - fresh.length).all<{ id: number }>()
-    : { results: [] };
-  const due = [...fresh, ...stale];
+    .bind(DETAILS_PER_RUN - stale.length).all<{ id: number }>();
+  const due = [...stale, ...fresh];
 
   const updates: D1PreparedStatement[] = [];
   for (const { id } of due) {
