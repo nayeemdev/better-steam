@@ -299,7 +299,15 @@ function renderMoods() {
   }).join("");
 }
 
+let gamesVersion = 0;
+let featuredKey = "";
+
+// The featured deal only depends on the game list, hidden games and currency, so filters and searches
+// leave it alone instead of rebuilding it and replaying the image fade.
 function renderFeatured() {
+  const key = [gamesVersion, state.currency, state.hidden.size].join("|");
+  if (key === featuredKey) return;
+  featuredKey = key;
   const el = $("featured");
   const candidates = state.games.filter(g => !state.hidden.has(g.id) && ["buy", "good", "sale"].includes(g.verdict));
   const pick = candidates.sort((a, b) => b.value - a.value)[0]
@@ -413,7 +421,8 @@ function render() {
   }
   $("more").hidden = list.length <= state.shown;
 
-  if (!overlayPreview() && !list.some(g => g.id === state.selected)) state.selected = list[0]?.id ?? null;
+  // The preview keeps showing the open game while filters change, so filtering never loads another game's details.
+  if (!overlayPreview() && !byId(state.selected)) state.selected = list[0]?.id ?? null;
   renderPreview();
   writeUrl();
 }
@@ -770,6 +779,7 @@ async function loadGames(request) {
   gridKey = "";
   $("grid").innerHTML = placeholderCards();
   state.games = await (request ?? fetchGames(state.region));
+  gamesVersion++;
   fillWatchBaselines();
   weighTags();
 }
@@ -842,6 +852,7 @@ document.addEventListener("click", e => {
     const id = Number(d.hide);
     state.hidden.add(id);
     saveHidden();
+    if (state.selected === id) state.selected = null;
     closePreview();
     render();
     toast(`Hidden ${byId(id).name}`, () => { state.hidden.delete(id); saveHidden(); render(); });
