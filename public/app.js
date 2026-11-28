@@ -1001,12 +1001,26 @@ async function start() {
     if (steamId) fetchProfile(steamId).then(p => { setProfile(p); if (state.games.length) render(); }).catch(() => {});
     await loadGames(state.region === firstRegion ? gamesRequest : undefined);
     render();
+    hideSplash();
     scheduleSteamSearch();
     if (state.selected && overlayPreview() && byId(state.selected)) select(state.selected);
   } catch {
     $("grid").innerHTML = `<div class="status"><b>Could not load games</b>Check your connection and try again.</div>`;
+    $("splashText").textContent = "We could not load today's prices. Check your connection and try again.";
+    $("splashBar").hidden = true;
+    $("splashRetry").hidden = false;
   }
 }
+
+const SPLASH_FADE_MS = 350;
+
+function hideSplash() {
+  const splash = $("splash");
+  splash.classList.add("done");
+  setTimeout(() => splash.remove(), SPLASH_FADE_MS);
+}
+
+$("splashRetry").addEventListener("click", () => location.reload());
 
 let installPrompt = null;
 window.addEventListener("beforeinstallprompt", e => {

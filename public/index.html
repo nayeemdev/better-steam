@@ -24,6 +24,15 @@
   <script type="module" src="/app.js"></script>
 </head>
 <body>
+  <div class="splash" id="splash" role="status" aria-live="polite">
+    <div class="splash-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 12h4M8 10v4M15 13h.01M18 11h.01"/><rect x="2" y="6" width="20" height="12" rx="4"/></svg>
+    </div>
+    <p class="splash-name">Better Steam</p>
+    <p class="splash-text" id="splashText">Loading today's prices</p>
+    <div class="splash-bar" id="splashBar" aria-hidden="true"><span></span></div>
+    <button class="btn primary" id="splashRetry" hidden>Try again</button>
+  </div>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
     <symbol id="i-pad" viewBox="0 0 24 24"><path d="M6 12h4M8 10v4M15 13h.01M18 11h.01"/><rect x="2" y="6" width="20" height="12" rx="4"/></symbol>
